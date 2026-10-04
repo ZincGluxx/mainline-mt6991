@@ -13,7 +13,13 @@
 # ramdisk, so the kernel is self-contained and does not depend on whatever
 # ramdisk the boot image happens to carry.
 #
-# Foreground note: step [1/5] compiles the init. When running this script in
+# Order matters: the external modules (scp / ccci_fsm_scp / connscp /
+# clk-mt6991-drv) are built *before* the initramfs list is generated and the
+# Image is linked, so the .ko files that go into the initramfs are the ones
+# built by this run.  A single `./build.sh` therefore always produces an Image
+# whose initramfs carries the current modules.
+#
+# Foreground note: step [1/6] compiles the init. When running this script in
 # the background, run that gcc line by hand first so a compile error is not
 # swallowed by the background chain.
 set -euo pipefail
@@ -30,19 +36,13 @@ JOBS=${JOBS:-4}
 mkdir -p "$OUT"
 cd "$K"
 
-echo "==> [1/5] static init"
-# INIT_SRC picks the init source.  Default init-rootfs.c is the minimal
-# rootfs-switch init; INIT_SRC=init.c builds the bring-up test init (the
-# display/touch register tests, then a reboot to Android).
-INIT_SRC=${INIT_SRC:-init-rootfs.c}
-gcc -static -O2 -Wall -Wextra -o "$IRFS/init" "$IRFS/$INIT_SRC"
-strip "$IRFS/init"
-ls -la "$IRFS/init"
-
-echo "==> [2/5] initramfs cpio_list"
-# gen_init_cpio's list format declares device nodes without needing mknod,
-# which proot would not allow anyway.
-cat > "$IRFS/cpio_list" <<EOF
+# Write $IRFS/cpio_list, the initramfs file list.  It references whatever module
+# .ko files are currently cached at $K, so it must be (re)generated after the
+# module builds and before 'make Image'.
+gen_cpio_list() {
+	# gen_init_cpio's list format declares device nodes without needing mknod,
+	# which proot would not allow anyway.
+	cat > "$IRFS/cpio_list" <<EOF
 dir /dev 0755 0 0
 nod /dev/console 0600 0 0 c 5 1
 nod /dev/null 0666 0 0 c 1 3
@@ -82,11 +82,34 @@ file /lib/firmware/BT_RAM_CODE_MT6653_2g2a_1_hdr.bin $IRFS/firmware/BT_RAM_CODE_
 file /lib/firmware/BT_RAM_CODE_MT6653_1_1_hdr.bin $IRFS/firmware/BT_RAM_CODE_MT6653_1_1_hdr.bin 0644 0 0
 file /lib/firmware/BT_FW.cfg $IRFS/firmware/BT_FW.cfg 0644 0 0
 file /lib/firmware/mediatek/BT_RAM_CODE_MT6653_2g2a_1_hdr.bin $IRFS/firmware/BT_RAM_CODE_MT6653_2g2a_1_hdr.bin 0644 0 0
+# NXP TFA98xx speaker-amp tuning container
+file /lib/firmware/tfa98xx.cnt $IRFS/firmware/tfa98xx.cnt 0644 0 0
 file /init $IRFS/init 0755 0 0
 EOF
-cat "$IRFS/cpio_list"
+	# Loadable modules, built by the module step below and cached at $K.
+	echo "dir /lib/modules 0755 0 0" >> "$IRFS/cpio_list"
+	for ko in scp.ko ccci_fsm_scp.ko connscp.ko clk-mt6991-drv.ko; do
+		if [ -f "$K/$ko" ]; then
+			echo "file /lib/modules/$ko $K/$ko 0644 0 0" >> "$IRFS/cpio_list"
+		else
+			echo "  WARNING: $ko missing from $K (not embedded)"
+		fi
+	done
+}
 
-echo "==> [3/5] config"
+echo "==> [1/6] static init"
+# INIT_SRC picks the init source.  Default init-rootfs.c is the minimal
+# rootfs-switch init; INIT_SRC=init.c builds the bring-up test init (the
+# display/touch register tests, then a reboot to Android).
+INIT_SRC=${INIT_SRC:-init-rootfs.c}
+gcc -static -O2 -Wall -Wextra -o "$IRFS/init" "$IRFS/$INIT_SRC"
+strip "$IRFS/init"
+ls -la "$IRFS/init"
+
+echo "==> [2/6] initramfs cpio_list (first cut; regenerated after modules)"
+gen_cpio_list
+
+echo "==> [3/6] config"
 # CONFIG_INITRAMFS_SOURCE is generated here so the fragment stays path-free.
 cat "$K/rmx6688.fragment" > "$OUT/.fragment.gen"
 echo "CONFIG_INITRAMFS_SOURCE=\"$IRFS/cpio_list\"" >> "$OUT/.fragment.gen"
@@ -123,7 +146,7 @@ grep -q "^CONFIG_ARM64_EMBEDDED_DTB_SOURCE=\"arch/arm64/boot/dts/$DTB\"" "$OUT/.
 echo "  cmdline $(grep '^CONFIG_CMDLINE=' "$OUT/.config")"
 [ "$fail" = 0 ] || { echo "config verification FAILED"; exit 1; }
 
-echo "==> [4/5] DTB"
+echo "==> [4/6] DTB"
 # Build only our board's DTB, not the whole tree: an unrelated DTB failing
 # elsewhere in mainline would otherwise abort this step before ever reaching
 # mediatek/.  The target is given relative to arch/arm64/boot/dts/.
@@ -139,8 +162,62 @@ ls -la "$OUT/arch/arm64/boot/dts/$DTB"
 echo "--- dtc warnings for our DTB (should be none) ---"
 "$OUT/scripts/dtc/dtc" -I dtb -O dts "$OUT/arch/arm64/boot/dts/$DTB" -o /dev/null
 
-echo "==> [5/5] kernel Image (this is the long part)"
+echo "==> [5/6] kernel modules (scp, ccci_fsm_scp, connscp, clk-mt6991-drv)"
+# The external-module builds link against the tree's Module.symvers, which a
+# kernel link produces.  On an already-built tree it is present; on a first
+# build, produce vmlinux once now (with a first-cut initramfs list) so the
+# module builds have something to link against.
+if [ ! -f "$OUT/vmlinux" ]; then
+	echo "  (no vmlinux yet; building it first)"
+	gen_cpio_list
+	ARCH=arm64 make O="$OUT" -j"$JOBS" vmlinux
+fi
+# kbuild only emits vmlinux.symvers unless a 'make modules' pass runs.  The
+# external module builds here only need the vmlinux exports (mbox/ipi/...),
+# which vmlinux.symvers already carries, so make it visible as Module.symvers.
+if [ ! -f "$OUT/Module.symvers" ] && [ -f "$OUT/vmlinux.symvers" ]; then
+	cp "$OUT/vmlinux.symvers" "$OUT/Module.symvers"
+fi
+
+# Each spec is "<make -M dir>:<module.ko>".  KBUILD_MODPOST_WARN lets the .ko
+# carry the (exported by vmlinux) mbox/ipi symbols unresolved; they are
+# resolved against vmlinux at insmod time.  This avoids a full 'make modules'
+# (which build.sh does not otherwise do).
+for spec in \
+	"drivers/misc/mediatek/scp:scp.ko" \
+	"drivers/misc/mediatek/eccci/fsm:ccci_fsm_scp.ko" \
+	"drivers/misc/mediatek/conn_scp:connscp.ko" \
+	"drivers/clk/mediatek/mt6991:clk-mt6991-drv.ko"; do
+	mdir=${spec%%:*}; mko=${spec##*:}
+	ARCH=arm64 make O="$OUT" -j"$JOBS" KBUILD_MODPOST_WARN=1 \
+		M="$mdir" modules 2>&1 | tail -3
+	# With O=out the external-module .ko still lands in-tree under $mdir.
+	ko=$(find "$OUT/$mdir" "$mdir" -name "$mko" 2>/dev/null | head -1)
+	if [ -n "$ko" ]; then
+		cp "$ko" "$K/$mko"
+		echo "  cached $ko -> $K/$mko"
+	else
+		echo "  WARNING: $mko not found ($mdir)"
+	fi
+done
+
+echo "==> [6/6] kernel Image (this is the long part)"
+# Regenerate now that this run's .ko are cached, then link.
+gen_cpio_list
 ARCH=arm64 make O="$OUT" -j"$JOBS" Image
+
+# gen_init_cpio only *warns* (exit 0) about lines it cannot parse and silently
+# drops them; if /init is dropped the image has no init and the kernel panics
+# with "VFS: Cannot open root device".  Re-run it and fail on any error.
+if [ -x "$OUT/usr/gen_init_cpio" ]; then
+	err=$("$OUT/usr/gen_init_cpio" "$IRFS/cpio_list" 2>&1 >/dev/null)
+	if [ -n "$err" ]; then
+		echo "  FAILED: gen_init_cpio reported errors (cpio entry dropped?):"
+		echo "$err"
+		exit 1
+	fi
+	echo "  ok      initramfs cpio_list parsed cleanly"
+fi
 
 echo
 echo "--- verifying the DTB actually embedded in the Image ---"
