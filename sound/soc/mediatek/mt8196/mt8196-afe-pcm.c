@@ -2494,6 +2494,12 @@ static void mt8196_afe_pcm_dev_remove(struct platform_device *pdev)
 
 static const struct of_device_id mt8196_afe_pcm_dt_match[] = {
 	{ .compatible = "mediatek,mt8196-afe", },
+	/*
+	 * MT6991 (Dimensity 9400+) AFE shares the MT8196 register layout
+	 * (all shared register offsets match), so it is driven by the same
+	 * code.  Only the clock wiring differs (see the board DTS).
+	 */
+	{ .compatible = "mediatek,mt6991-afe", },
 	{ /* sentinel */ },
 };
 MODULE_DEVICE_TABLE(of, mt8196_afe_pcm_dt_match);

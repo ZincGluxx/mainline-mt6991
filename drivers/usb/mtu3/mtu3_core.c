@@ -339,12 +339,33 @@ void mtu3_ep_stall_set(struct mtu3_ep *mep, bool set)
 		set ? "SEND STALL" : "CLEAR STALL, with EP RESET");
 }
 
+#define PHY_MODE_DPPULLUP_SET	5
+#define PHY_MODE_DPPULLUP_CLR	6
+
 void mtu3_dev_on_off(struct mtu3 *mtu, int is_on)
 {
+	struct ssusb_mtk *ssusb = mtu->ssusb;
+	int i;
+
 	if (mtu->u3_capable && mtu->speed >= USB_SPEED_SUPER)
 		mtu3_ss_func_set(mtu, is_on);
 	else
 		mtu3_hs_softconn_set(mtu, is_on);
+
+	/*
+	 * Propagate the D+ pull-up through the SoC PHY to any eUSB2 repeaters
+	 * (MT6379): the repeater drives the connector-side D+ (MANU_MODE|PU_DP)
+	 * and must follow connect/disconnect -- including a cable replug.
+	 */
+	if (ssusb) {
+		for (i = 0; i < ssusb->num_phys; i++) {
+			if (IS_ERR_OR_NULL(ssusb->phys[i]))
+				continue;
+			phy_set_mode_ext(ssusb->phys[i], PHY_MODE_USB_DEVICE,
+					 is_on ? PHY_MODE_DPPULLUP_SET :
+						 PHY_MODE_DPPULLUP_CLR);
+		}
+	}
 
 	dev_info(mtu->dev, "gadget (%s) pullup D%s\n",
 		usb_speed_string(mtu->speed), is_on ? "+" : "-");

@@ -32,6 +32,30 @@ static const char *aud_clks[MT8196_CLK_NUM] = {
 	[MT8196_CLK_TOP_ADSP_SEL] = "top_adsp",
 };
 
+/*
+ * MT6991 (Dimensity 9400+) uses the same AFE blocks but a differently named
+ * audio clock tree (provided by the vendor mt6991 audiosys / cksys /
+ * vlp_cksys providers).  The board DTS lists these names.
+ */
+static const char * const aud_clks_mt6991[MT8196_CLK_NUM] = {
+	/* vlp clk */
+	[MT8196_CLK_VLP_MUX_AUDIOINTBUS] = "vlp_mux_audio_int",
+	[MT8196_CLK_VLP_MUX_AUD_ENG1] = "vlp_mux_aud_eng1",
+	[MT8196_CLK_VLP_MUX_AUD_ENG2] = "vlp_mux_aud_eng2",
+	[MT8196_CLK_VLP_MUX_AUDIO_H] = "vlp_mux_audio_h",
+	/* pll */
+	[MT8196_CLK_TOP_APLL1_CK] = "aud_apll1_clk",
+	[MT8196_CLK_TOP_APLL2_CK] = "aud_apll2_clk",
+	/* divider */
+	[MT8196_CLK_TOP_APLL12_DIV_I2SIN0] = "ck_apll12_div_i2sin0",
+	[MT8196_CLK_TOP_APLL12_DIV_I2SIN1] = "ck_apll12_div_i2sin1",
+	[MT8196_CLK_TOP_APLL12_DIV_FMI2S] = "ck_apll12_div_fmi2s",
+	[MT8196_CLK_TOP_APLL12_DIV_TDMOUT_M] = "ck_apll12_div_tdmout_m",
+	[MT8196_CLK_TOP_APLL12_DIV_TDMOUT_B] = "ck_apll12_div_tdmout_b",
+	/* mux */
+	[MT8196_CLK_TOP_ADSP_SEL] = "ck_adsp_sel",
+};
+
 int mt8196_afe_enable_clk(struct mtk_base_afe *afe, struct clk *clk)
 {
 	int ret;
@@ -561,7 +585,11 @@ int mt8196_afe_disable_main_clock(struct mtk_base_afe *afe)
 int mt8196_init_clock(struct mtk_base_afe *afe)
 {
 	struct mt8196_afe_private *afe_priv = afe->platform_priv;
+	const char * const *names = aud_clks;
 	int i;
+
+	if (of_device_is_compatible(afe->dev->of_node, "mediatek,mt6991-afe"))
+		names = aud_clks_mt6991;
 
 	afe_priv->clk = devm_kcalloc(afe->dev, MT8196_CLK_NUM, sizeof(*afe_priv->clk),
 				     GFP_KERNEL);
@@ -569,9 +597,9 @@ int mt8196_init_clock(struct mtk_base_afe *afe)
 		return -ENOMEM;
 
 	for (i = 0; i < MT8196_CLK_NUM; i++) {
-		afe_priv->clk[i] = devm_clk_get(afe->dev, aud_clks[i]);
+		afe_priv->clk[i] = devm_clk_get(afe->dev, names[i]);
 		if (IS_ERR(afe_priv->clk[i])) {
-			dev_err(afe->dev, "devm_clk_get %s fail\n", aud_clks[i]);
+			dev_err(afe->dev, "devm_clk_get %s fail\n", names[i]);
 			return PTR_ERR(afe_priv->clk[i]);
 		}
 	}

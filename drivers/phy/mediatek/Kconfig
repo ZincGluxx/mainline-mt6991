@@ -102,6 +102,19 @@ config PHY_MTK_NXP_EUSB2_REPEATER
 	  MediaTek MT6991 platforms.  The repeater sits on I2C between the
 	  USB2 PHY and the USB-C connector, conditioning the eUSB2 signals.
 
+config PHY_MTK_MT6379_EUSB2_REPEATER
+	tristate "MediaTek MT6379 eUSB2 Repeater (SPMI) Driver"
+	depends on ARCH_MEDIATEK || COMPILE_TEST
+	depends on OF
+	depends on SPMI
+	select GENERIC_PHY
+	help
+	  Enable this to support the MT6379 eUSB2 repeater, which sits on
+	  SPMI between the SoC USB2 PHY (xsphy) and the USB-C connector on
+	  MT6991 platforms.  It is the only data-path repeater and must be
+	  driven (power_on/set_mode DPPULLUP) for the USB device path to
+	  work and to re-handshake on cable replug.
+
 config PHY_MTK_DP
 	tristate "MediaTek DP-PHY Driver"
 	depends on ARCH_MEDIATEK || COMPILE_TEST

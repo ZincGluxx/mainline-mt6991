@@ -993,4 +993,16 @@ config INPUT_STPMIC1_ONKEY
 	  To compile this driver as a module, choose M here: the
 	  module will be called stpmic1_onkey.
 
+config INPUT_MT6363_SPMI_KEYS
+	tristate "MediaTek MT6363 SPMI PMIC keys"
+	depends on SPMI && REGMAP_SPMI
+	help
+	  Polled power/volume-up key driver for the MediaTek MT6363 SPMI
+	  PMIC.  Used on SoCs whose SPMI controller has no interrupt domain
+	  (e.g. MT6991), so the PWRKEY/HOMEKEY TOPSTATUS bits are sampled
+	  instead of using the PMIC IRQs.
+
+	  To compile this driver as a module, choose M here: the module will
+	  be called mt6363-spmi-keys.
+
 endif

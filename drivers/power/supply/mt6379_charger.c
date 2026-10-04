@@ -23,6 +23,7 @@
 #include <linux/delay.h>
 #include <linux/module.h>
 #include <linux/of.h>
+#include <linux/of_platform.h>
 #include <linux/platform_device.h>
 #include <linux/power_supply.h>
 #include <linux/regmap.h>
@@ -205,6 +206,7 @@ static int mt6379_chg_probe(struct spmi_device *sdev)
 {
 	struct power_supply_config cfg = {};
 	struct mt6379_chg *c;
+	int ret;
 
 	c = devm_kzalloc(&sdev->dev, sizeof(*c), GFP_KERNEL);
 	if (!c)
@@ -236,6 +238,17 @@ static int mt6379_chg_probe(struct spmi_device *sdev)
 	dev_info(c->dev, "MT6379 charger registered (AICR %u uA, ICHG %u uA)\n",
 		 c->aicr, c->ichg);
 
+	/*
+	 * Populate child devices that share the MT6379 regmap -- in particular
+	 * the eUSB2 repeater (mtk,mt6379-eusb2-repeater), which is a phy
+	 * provider for the SoC xsphy and whose regmap is dev_get_regmap()'d
+	 * from this SPMI device.
+	 */
+	ret = of_platform_populate(sdev->dev.of_node, NULL, NULL, &sdev->dev);
+	if (ret)
+		return dev_err_probe(c->dev, ret,
+				     "failed to populate MT6379 children\n");
+
 	return 0;
 }
 
@@ -243,6 +256,7 @@ static void mt6379_chg_remove(struct spmi_device *sdev)
 {
 	struct mt6379_chg *c = spmi_device_get_drvdata(sdev);
 
+	of_platform_depopulate(&sdev->dev);
 	cancel_delayed_work_sync(&c->poll);
 }
 

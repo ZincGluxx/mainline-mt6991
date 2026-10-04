@@ -13,12 +13,15 @@
 /dts-v1/;
 
 #include "mt6991.dtsi"
+#include <dt-bindings/input/input.h>
 #include <dt-bindings/pinctrl/mt6991-pinfunc.h>
 #include "mt6991-realme-rmx6688-connectivity.dtsi"
 #include "mt6991-realme-rmx6688-pcie.dtsi"
 #include "mt6991-realme-connfem-fem.dtsi"
 #include "mt6991-realme-connfem-sku.dtsi"
 #include "mt6991-realme-rmx6688-bt.dtsi"
+#include "mt6991-realme-rmx6688-modem.dtsi"
+#include "mt6991-realme-rmx6688-scp.dtsi"
 
 / {
 	model = "realme GT7 (RMX6688)";
@@ -35,6 +38,9 @@
 		 * remap applies; non-zero means production silicon, no remap.
 		 */
 		atag,chipid = <0x18000000 0x57130000 0x8a0000 0x1ca0000 0x1000000>;
+
+		/* LK boot-mode tag (stock /chosen/atag,boot): normal boot. */
+		atag,boot = <0x10000000 0x2080041 0x00 0x2000000>;
 
 		/*
 		 * Live bootloader framebuffer, from /chosen/atag,videolfb in the
@@ -78,6 +84,26 @@
 		 * must not allocate from them.
 		 */
 		#include "mt6991-realme-rmx6688-resmem.dtsi"
+
+		/*
+		 * DPMAIF (MD data path) DMA buffers.  The vendor reserves these
+		 * dynamically (alloc-ranges), so they are not in the static FDT;
+		 * sizes/alignment copied from the vendor mt6991.dts.
+		 */
+		dpmaif_resv_cache_mem: ccci-dpmaif-cache-memory {
+			compatible = "mediatek,dpmaif-resv-cache-mem";
+			size = <0 0x00190000>;	/* 1638400 B for 1 rxq */
+			alignment = <0 0x10000>;
+			alloc-ranges = <0 0x40000000 0 0xf0000000>;
+		};
+
+		dpmaif_resv_nocache_mem: ccci-dpmaif-nocache-memory {
+			compatible = "mediatek,dpmaif-resv-nocache-mem";
+			no-map;
+			size = <0 0x0050000>;	/* 327680 B */
+			alignment = <0 0x10000>;
+			alloc-ranges = <0 0x40000000 0 0xf0000000>;
+		};
 
 		/*
 		 * The vendor reserved the whole bootloader VRAM (0xfd6b0000 +
@@ -225,6 +251,57 @@
 		regulator-max-microvolt = <750000>;
 		regulator-always-on;
 	};
+
+	/*
+	 * Volume-down button.  The power and volume-up buttons come from the
+	 * MT6363 PMIC (see &mt6363 below); volume-down is not wired to the
+	 * SoC KPD matrix but to GPIO11 as a plain active-low EINT.  Marked as
+	 * a wakeup source so it can leave s2idle (the polled MT6363 keys
+	 * cannot arm a PMIC IRQ on MT6991).
+	 */
+	gpio-keys {
+		compatible = "gpio-keys";
+		pinctrl-names = "default";
+		pinctrl-0 = <&volume_down_pins>;
+
+		key-volume-down {
+			label = "Volume Down";
+			gpios = <&pio 11 GPIO_ACTIVE_LOW>;
+			linux,code = <KEY_VOLUMEDOWN>;
+			linux,input-type = <EV_KEY>;
+			wakeup-source;
+			debounce-interval = <32>;
+		};
+	};
+};
+
+/*
+ * MT6363 main PMIC (SPMI USID 4, on the same bus as the MT6379 charger).
+ * Only the keys are described here: PWRKEY -> KEY_POWER and HOMEKEY ->
+ * KEY_VOLUMEUP (the physical volume-up line is wired to the PMIC, not to an
+ * SoC GPIO).  The driver polls TOPSTATUS because the MT6991 SPMI controller
+ * runs without an interrupt domain.
+ */
+&spmi1 {
+	mt6363: pmic@4 {
+		compatible = "mediatek,mt6363";
+		reg = <0x4 SPMI_USID>;
+		#address-cells = <0>;
+		#size-cells = <0>;
+
+		mt6363keys: keys {
+			compatible = "mediatek,mt6363-keys";
+
+			power {
+				linux,keycodes = <KEY_POWER>;
+				wakeup-source;
+			};
+
+			home {
+				linux,keycodes = <KEY_VOLUMEUP>;
+			};
+		};
+	};
 };
 
 &gpu {
@@ -261,6 +338,28 @@
 
 &u2phy0 {
 	status = "okay";
+	/* eUSB2 repeater driven by the xsphy on every connect/replug */
+	phys = <&mt6379_eusb2_repeater>;
+};
+
+/*
+ * The MT6379 contains the eUSB2 repeater that sits between the SoC xsphy and
+ * the USB-C connector.  It has no regmap of its own: the mt6379-charger SPMI
+ * driver owns the MT6379 regmap, populates this child (of_platform_populate),
+ * and the repeater driver picks up the parent regmap via dev_get_regmap().
+ */
+&mt6379 {
+	mt6379_eusb2_repeater: eusb2-repeater@d00 {
+		compatible = "mtk,mt6379-eusb2-repeater";
+		reg = <0xd00>;
+		#phy-cells = <0>;
+		mediatek,rx-sqth = <0x5>;
+		mediatek,pre-emphasis = <0x4>;
+		mediatek,usb20-fs-sr = <0x7>;
+		mediatek,eusb20-fsrx-hys-sel = <0x0>;
+		mediatek,vrt-sel = <0x1>;
+		mediatek,equalization = <0x4>;
+	};
 };
 
 &u2port0 {
@@ -289,9 +388,26 @@
  *
  * SCL = GPIO104, SDA = GPIO105 (vendor FDT scl-gpio-id / sda-gpio-id).
  */
+/*
+ * The vendor i2c driver forces clk_src=0 (clk26m) for every i2c controller.
+ * Mainline leaves the topckgen "i2c_west"/"i2c_east"/... mux at whatever the
+ * bootloader left (here 124.8 MHz), and the i2c timing then comes out wrong
+ * (both buses fail: i2c0 times out, i2c6 NAKs).  Reparent all i2c muxes to
+ * clk26m to match the vendor.
+ */
+&topckgen {
+	assigned-clocks = <&topckgen CLK_TOP_I2C_P>,
+			  <&topckgen CLK_TOP_I2C_EAST>,
+			  <&topckgen CLK_TOP_I2C_WEST>,
+			  <&topckgen CLK_TOP_I2C_NORTH>;
+	assigned-clock-parents = <&clk26m>, <&clk26m>, <&clk26m>, <&clk26m>;
+};
+
 &i2c6 {
 	status = "okay";
-	clock-frequency = <400000>;
+	clock-frequency = <100000>;
+	pinctrl-names = "default";
+	pinctrl-0 = <&pinctrl_i2c6>;
 
 	nxp-eusb2-repeater@4f {
 		compatible = "mtk,nxp-eusb2-repeater";
@@ -305,6 +421,25 @@
 		reg = <0x28>;
 		status = "okay";
 	};
+
+	/*
+	 * NXP TFA9874 smart speaker amplifiers (project "emira").
+	 * Their reset lines live on the MT6373 PMIC pinctrl (gpio1/2), which has
+	 * no mainline driver yet, so reset-gpios are omitted for now.
+	 */
+	tfa98xx_l: amplifier@34 {
+		compatible = "goodix,tfa9874";
+		reg = <0x34>;
+		#sound-dai-cells = <0>;
+		status = "okay";
+	};
+
+	tfa98xx_r: amplifier@35 {
+		compatible = "goodix,tfa9874";
+		reg = <0x35>;
+		#sound-dai-cells = <0>;
+		status = "okay";
+	};
 };
 
 /*
@@ -314,7 +449,7 @@
  */
 &i2c0 {
 	status = "okay";
-	clock-frequency = <400000>;
+	clock-frequency = <100000>;
 	pinctrl-names = "default";
 	pinctrl-0 = <&pinctrl_i2c0>;
 
@@ -477,6 +612,24 @@
 			bias-pull-up;
 		};
 	};
+
+	/* I2C6: SCL=GPIO104, SDA=GPIO105 (vendor scl/sda-gpio-id 0x68/0x69). */
+	pinctrl_i2c6: i2c6-pins {
+		pins {
+			pinmux = <PINMUX_GPIO104__FUNC_SCL6>,
+				 <PINMUX_GPIO105__FUNC_SDA6>;
+			bias-pull-up;
+		};
+	};
+
+	/* Volume-down EINT on GPIO11, active-low (vendor "volume_down_as_int"). */
+	volume_down_pins: volume-down-pins {
+		pins_key {
+			pinmux = <PINMUX_GPIO11__FUNC_GPIO11>;
+			input-enable;
+			bias-pull-up;
+		};
+	};
 };
 
 &spi6 {
@@ -534,5 +687,33 @@
 				remote-endpoint = <&dsi0_out>;
 			};
 		};
+	};
+};
+
+/*
+ * Audio front-end (AFE).  MT6991 shares the MT8196 AFE register layout, so the
+ * mainline mt8196 AFE driver drives it; only the clock wiring differs (vendor
+ * mt6991 audiosys / cksys / vlp_cksys providers).  The clocks are named per
+ * the vendor FDT and match aud_clks_mt6991[] in mt8196-afe-clk.c.
+ */
+/ {
+	afe: afe@1a110000 {
+		compatible = "mediatek,mt6991-afe";
+		reg = <0 0x1a110000 0 0x9000>;
+		interrupts = <GIC_SPI 351 IRQ_TYPE_LEVEL_HIGH 0>;
+		power-domains = <&scpsys MT6991_POWER_DOMAIN_AUDIO>;
+
+		clocks = <&audiosys 0x71>, <&audiosys 0x73>,
+			 <&cksys 0x50>, <&cksys 0x51>, <&cksys 0x5c>,
+			 <&cksys 0x5d>, <&cksys 0x5e>, <&cksys 0x2d>,
+			 <&vlp_cksys 0x28>, <&vlp_cksys 0x26>,
+			 <&vlp_cksys 0x27>, <&vlp_cksys 0x25>;
+		clock-names = "aud_apll1_clk", "aud_apll2_clk",
+			      "ck_apll12_div_i2sin0", "ck_apll12_div_i2sin1",
+			      "ck_apll12_div_fmi2s", "ck_apll12_div_tdmout_m",
+			      "ck_apll12_div_tdmout_b", "ck_adsp_sel",
+			      "vlp_mux_audio_int", "vlp_mux_aud_eng1",
+			      "vlp_mux_aud_eng2", "vlp_mux_audio_h";
+		status = "okay";
 	};
 };

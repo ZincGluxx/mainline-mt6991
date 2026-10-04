@@ -6665,10 +6665,19 @@ int mtk_init_ap_role(struct GLUE_INFO *prGlueInfo,
 	COPY_MAC_ADDR(rMacAddr,
 		prAdapter->rWifiVar.aucP2pInterfaceAddress[u4Idx]);
 
-	/* reference from the glRegisterP2P() */
+	/*
+	 * reference from the glRegisterP2P().
+	 *
+	 * fgSkipRole must be SKIP_ROLE_NONE (0), not TRUE: passing
+	 * SKIP_ROLE_ALL makes glSetupP2P() skip aprRoleHandler, so the
+	 * later mtk_p2p_cfg80211_start_ap() cannot find the role for wlan0
+	 * ("can NOT find role by dev(wlan0)") and the startup fails.
+	 * The gen4-mt7663/gen4-mt79xx versions call glSetupP2P() without a
+	 * skip for the same reason.
+	 */
 	gprP2pRoleWdev[u4Idx] = ndev->ieee80211_ptr;
 	if (glSetupP2P(prGlueInfo, gprP2pRoleWdev[u4Idx], ndev,
-		u4Idx, TRUE, TRUE, rMacAddr)) {
+		u4Idx, TRUE, 0, rMacAddr)) {
 		DBGLOG(INIT, ERROR, "glSetupP2P failed\n");
 		gprP2pRoleWdev[u4Idx] = NULL;
 		return -EFAULT;

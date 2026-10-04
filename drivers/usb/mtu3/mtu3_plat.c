@@ -348,6 +348,30 @@ out:
 	return 0;
 }
 
+/*
+ * Force a D+ disconnect -> connect so the host re-enumerates.  Used by the
+ * initramfs USB replug watcher: the eUSB2 chain cannot report VBUS, so mtu3
+ * forces VBUS_FRC_EN|VBUS_ON and never sees a disconnect; a real cable replug
+ * therefore does not re-enumerate.  This toggles only the soft-connect (the
+ * gadget stays bound) -- unlike unbind/rebind, which would leave the legacy
+ * gadget unbound (the UDC core does not re-bind it on re-probe).
+ */
+static ssize_t reconnect_store(struct device *dev,
+			       struct device_attribute *attr,
+			       const char *buf, size_t count)
+{
+	struct ssusb_mtk *ssusb = dev_get_drvdata(dev);
+	struct mtu3 *mtu = ssusb ? ssusb->u3d : NULL;
+
+	if (mtu && mtu->is_active) {
+		usb_gadget_disconnect(&mtu->g);
+		msleep(150);
+		usb_gadget_connect(&mtu->g);
+	}
+	return count;
+}
+static DEVICE_ATTR_WO(reconnect);
+
 static int mtu3_probe(struct platform_device *pdev)
 {
 	struct device_node *node = pdev->dev.of_node;
@@ -454,6 +478,8 @@ static int mtu3_probe(struct platform_device *pdev)
 		goto comm_exit;
 	}
 
+	device_create_file(dev, &dev_attr_reconnect);
+
 	device_enable_async_suspend(dev);
 	pm_runtime_put_autosuspend(dev);
 	pm_runtime_forbid(dev);
@@ -478,6 +504,7 @@ static void mtu3_remove(struct platform_device *pdev)
 {
 	struct ssusb_mtk *ssusb = platform_get_drvdata(pdev);
 
+	device_remove_file(&pdev->dev, &dev_attr_reconnect);
 	pm_runtime_get_sync(&pdev->dev);
 
 	switch (ssusb->dr_mode) {

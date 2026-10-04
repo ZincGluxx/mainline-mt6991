@@ -28,6 +28,18 @@
 /* IOMMU related SMC call */
 #define MTK_SIP_KERNEL_IOMMU_CONTROL	MTK_SIP_SMC_CMD(0x514)
 
+/* Debug related SMC call (modem register dump, vendor value) */
+#define MTK_SIP_KERNEL_CCCI_CONTROL	MTK_SIP_SMC_CMD(0x505)
+
+/* HWCCF (voter clock control) SMC call, vendor value */
+#define MTK_SIP_KERNEL_HWCCF_CONTROL	MTK_SIP_SMC_CMD(0x540)
+
+/* SCP (tinysys) control SMC call, vendor value */
+#define MTK_SIP_TINYSYS_SCP_CONTROL	MTK_SIP_SMC_CMD(0x528)
+
+/* SCP DVFS control SMC call, vendor value */
+#define MTK_SIP_SCP_DVFS_CONTROL	MTK_SIP_SMC_CMD(0x232)
+
 /* Connectivity / PCIe / GPUEB control (values shared with the vendor ATF) */
 #define MTK_SIP_KERNEL_PCIE_CONTROL	MTK_SIP_SMC_CMD(0x52F)
 #define MTK_SIP_KERNEL_GPUEB_CONTROL	MTK_SIP_SMC_CMD(0x530)

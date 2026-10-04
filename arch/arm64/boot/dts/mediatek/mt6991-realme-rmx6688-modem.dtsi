@@ -1,0 +1,256 @@
+// SPDX-License-Identifier: (GPL-2.0 OR MIT)
+/*
+ * MT6991 (RMX6688) modem / CCCI nodes.
+ *
+ * All register bases, interrupt numbers and properties are copied from the
+ * authenticated stock runtime FDT (fdt.dts.txt) and the vendor mt6991.dts.
+ *
+ * The CCIF block needs its infra-ao clock gates running before any register
+ * read/write; the ccifdriver node lists them as standard clocks (with
+ * ccif-clk-free-run = 0), provided by the ported MT6991 infra-ao bus-gate
+ * clock provider.
+ */
+
+#include <dt-bindings/power/mt6991-power.h>
+#include <dt-bindings/clock/mt6991-clk.h>
+
+&soc {
+	/*
+	 * INFRACFG_AO @ 0x10001000 is the syscon the mddriver/ccif drivers
+	 * resolve through "ccci-infracfg"; all their register offsets are
+	 * relative to this base.  The stock FDT confirms it (the mddriver
+	 * phandle resolves here).  Getting this wrong makes every MD infra
+	 * register access land in the wrong block.
+	 */
+	infracfg_ao: syscon@10001000 {
+		compatible = "mediatek,mt6991-infracfg_ao", "syscon";
+		reg = <0 0x10001000 0 0x1000>;
+	};
+
+	/*
+	 * The ccif driver looks this node up by name on the hw-reset-ver 1
+	 * path ("mediatek,infracfg"); harmless on our hw-reset-ver 2.
+	 */
+	infracfg: syscon@14136000 {
+		compatible = "mediatek,mt6991-infracfg", "mediatek,infracfg",
+			     "syscon";
+		reg = <0 0x14136000 0 0x1000>;
+	};
+
+	/*
+	 * SCP/SPM power-domain control block (MD, CONN, PEXTP, ... MTCMOS).
+	 * The non-hwv compatible is used on purpose: its MD/CONN domain
+	 * descriptors are identical to the -hwv table but avoid the
+	 * hardware-voter register dance.  APIFRBUS_AO @ 0x1002c000 holds the
+	 * AXI bus protectors the MD domain clears on power-on.
+	 */
+	scpsys_bus: syscon@1c00d000 {
+		compatible = "mediatek,mt6991-scpsys-bus", "syscon";
+		reg = <0 0x1c00d000 0 0x1000>;
+	};
+
+	ifr_bus: syscon@1002c000 {
+		compatible = "mediatek,mt6991-ifr_bus", "syscon";
+		reg = <0 0x1002c000 0 0x1000>;
+	};
+
+	scpsys: power-controller@1c004000 {
+		compatible = "mediatek,mt6991-scpsys", "syscon";
+		reg = <0 0x1c004000 0 0x1000>;
+		#power-domain-cells = <1>;
+		apifrbus-ao-io-reg-bus = <&ifr_bus>;
+		spm = <&scpsys_bus>;
+		hw-voter-regmap = <&hwv>;
+	};
+
+	/*
+	 * DPMAIF is the MD data path (mdhif-type bit2).  Its clock gates live in
+	 * the APIFR bus (apifrbus_ao_mem_reg) provider now ported into
+	 * clk-mt6991; the two parents (ck_dpmaif_main_ck / vlp_infra_26m_ck)
+	 * come from cksys/vlp_cksys.
+	 */
+	apifrbus_ao_mem_reg_clk: syscon@14126000 {
+		compatible = "mediatek,mt6991-apifrbus_ao_mem_reg", "syscon";
+		reg = <0 0x14126000 0 0x1000>;
+		#clock-cells = <1>;
+	};
+
+	infracfg_ao_mem: infracfg-ao-mem@14126000 {
+		compatible = "mediatek,infracfg_ao_mem";
+		reg = <0 0x14126000 0 0x1000>;
+	};
+
+	dpmaif: dpmaif@14117000 {
+		compatible = "mediatek,dpmaif";
+		reg = <0 0x14117000 0 0x1000>,
+		      <0 0x1410d000 0 0x1000>,
+		      <0 0x1410c000 0 0x1000>,
+		      <0 0x1410e000 0 0x1000>;
+		interrupts = <GIC_SPI 851 IRQ_TYPE_LEVEL_HIGH 0>,
+			     <GIC_SPI 850 IRQ_TYPE_LEVEL_HIGH 0>;
+		mediatek,dpmaif-ver = <3>;
+		mediatek,dpmaif-cap = <0x14a>;
+		mediatek,plat-info = <6991>;
+		clocks = <&apifrbus_ao_mem_reg_clk CLK_IFR_MEM_DPMAIF_MAIN_CCCI>,
+			 <&apifrbus_ao_mem_reg_clk CLK_IFR_MEM_DPMAIF_26M_CCCI>;
+		clock-names = "infra-dpmaif-clk", "infra-dpmaif-rg-mmw-clk";
+		dpmaif-infracfg = <&infracfg_ao>;
+		net-spd-ver = <8>;
+		hw-reset-ver = <1>;
+		status = "okay";
+	};
+
+	ccifdriver: ccifdriver@142c0000 {
+		compatible = "mediatek,ccci_ccif";
+		reg = <0 0x142c0000 0 0x1000>,	/* AP_CCIF_BASE */
+		      <0 0x142c1000 0 0x1000>,	/* MD_CCIF_BASE */
+		      <0 0x14461000 0 0x1000>;	/* CCIF_RESET_BASE */
+		mediatek,sram-size = <0x200>;
+		mediatek,ccif-hw-reset-ver = <2>;
+		mediatek,ccif-hw-reset-bit = <0>;
+		/* bootloader leaves the CCIF gates running */
+		mediatek,ccif-clk-free-run = <1>;
+		interrupts = <GIC_SPI 257 IRQ_TYPE_LEVEL_HIGH 0>,
+			     <GIC_SPI 258 IRQ_TYPE_LEVEL_HIGH 0>;
+		status = "okay";
+	};
+
+	mddriver: mddriver@d180000 {
+		compatible = "mediatek,mddriver";
+		reg = <0 0x0d180000 0 0x1400>;	/* MD L2 SRAM */
+		interrupts = <GIC_SPI 365 IRQ_TYPE_LEVEL_HIGH 0>,	/* MDWDT */
+			     <GIC_SPI 257 IRQ_TYPE_LEVEL_HIGH 0>,	/* CCIF0 */
+			     <GIC_SPI 258 IRQ_TYPE_LEVEL_HIGH 0>;
+		ccci,modem_info_v2 = <0xfebf 0x00 0x50190000 0x00 0x3000000
+				      0x1b000000 0x1000000 0x00 0x00 0x00 0x00 0x00>;
+		md1_ccb_cap_gear = <0x0e>;
+		md1_ccb_gear_list = "1(2,20);2(2,10);3(0,0);4(2,30);11(2,2);12(2,62);13(2,94);14(2,14);16(2,190)";
+		md_dbm_addr = <0x00 0xd4024000>;
+		md_low_power_addr = <0x00 0xd4020000>;
+		mediatek,mdhif-type = <6>;	/* bit1 CCIF | bit2 DPMAIF */
+		mediatek,ap-plat-info = <6991>;
+		mediatek,md-generation = <6299>;
+		mediatek,md-sub-version = <0>;
+		mediatek,offset-epon-md1 = <0x64 0x06>;
+		mediatek,cldma-capability = <10>;
+		mediatek,boot-status-value = <0x544300f1>;
+		mediatek,power-flow-config = <0x10>;
+		mediatek,srclken-o1 = <0>;
+		ccci-infracfg = <&infracfg_ao>;
+		ccci-topckgen = <&topckgen>;
+		/*
+		 * The CCIF sits in the MD MTCMOS domain; attaching here makes
+		 * the ccci probe's pm_runtime_get_sync() run the MD power
+		 * sequence (clearing SLEEP0/1_MD AXI protectors) before the
+		 * bootrom is released.  LK no longer leaves MD on for us.
+		 */
+		power-domains = <&scpsys MT6991_POWER_DOMAIN_MD>;
+		status = "okay";
+	};
+
+	ccci_scp: ccci-scp@142c4000 {
+		compatible = "mediatek,ccci_md_scp";
+		reg = <0 0x142c4000 0 0x1000>,	/* AP_CCIF2_BASE */
+		      <0 0x142c5000 0 0x1000>;	/* MD_CCIF2_BASE */
+		mediatek,scp-clk-free-run = <1>;
+		status = "okay";
+	};
+};
+
+/ {
+	md_attr_node {
+		compatible = "mediatek,md_attr_node";
+		mediatek,md_product_name_model_id = <0x602a>;
+		mediatek,md_drdi_rf_set_idx = <0xf0f0f0f>;
+	};
+
+	mdproperties {
+		md1_ccb_cap_gear = <0x0e>;
+		md1_ccb_gear_list = "1(2,20);2(2,10);3(0,0);4(2,30);11(2,2);12(2,62);13(2,94);14(2,14);16(2,190)";
+	};
+
+	/*
+	 * Modem board-type ADC.  The vendor node reads MT6363 AUXADC channel
+	 * 19 (VIN1, pull-up open) to distinguish Phone from EVB.  Mainline
+	 * has no MT6363 auxadc provider yet, so ccci_auxadc.c falls back to
+	 * the Phone value when the iio channel is unavailable.
+	 */
+	md_auxadc: md_auxadc {
+		compatible = "mediatek,md_auxadc";
+		io-channel-names = "md-channel", "md-battery";
+	};
+
+	gpio_usage_mapping: gpio {
+		compatible = "mediatek,gpio_usage_mapping";
+		GPIO_SIM1_HOT_PLUG = <&pio 44 GPIO_ACTIVE_HIGH>;
+		GPIO_SIM2_HOT_PLUG = <&pio 45 GPIO_ACTIVE_HIGH>;
+		GPIO_SIM2_SCLK = <&pio 131 GPIO_ACTIVE_HIGH>;
+		GPIO_SIM2_SRST = <&pio 132 GPIO_ACTIVE_HIGH>;
+		GPIO_SIM2_SIO = <&pio 133 GPIO_ACTIVE_HIGH>;
+		GPIO_SIM1_SCLK = <&pio 134 GPIO_ACTIVE_HIGH>;
+		GPIO_SIM1_SRST = <&pio 135 GPIO_ACTIVE_HIGH>;
+		GPIO_SIM1_SIO = <&pio 136 GPIO_ACTIVE_HIGH>;
+		GPIO_FDD_BAND_SUPPORT_DETECT_1ST_PIN = <&pio 145 GPIO_ACTIVE_HIGH>;
+		GPIO_FDD_BAND_SUPPORT_DETECT_2ND_PIN = <&pio 146 GPIO_ACTIVE_HIGH>;
+		GPIO_FDD_BAND_SUPPORT_DETECT_3RD_PIN = <&pio 147 GPIO_ACTIVE_HIGH>;
+		GPIO_FDD_BAND_SUPPORT_DETECT_4TH_PIN = <&pio 148 GPIO_ACTIVE_HIGH>;
+	};
+
+	/*
+	 * Modem-visible EINT contract.  The vendor DTS declares these nodes
+	 * empty and lets LK inject the properties; mainline never sees LK's
+	 * fixups, so the post-fixup stock values are spelled out here.  The
+	 * driver looks them up by name (port_rpc.c get_dtsi_eint_node()).
+	 */
+	MD1-SIM1-HOT-PLUG-EINT {
+		compatible = "mediatek,md1_sim1_hot_plug_eint-eint";
+		interrupt-parent = <&pio>;
+		interrupts = <0 8>;
+		debounce = <0 0x2710>;
+		dedicated = <0 0>;
+		src-pin = <0 1>;
+		sockettype = <0 0>;
+		status = "okay";
+	};
+
+	MD1-SIM2-HOT-PLUG-EINT {
+		compatible = "mediatek,md1_sim2_hot_plug_eint-eint";
+		interrupt-parent = <&pio>;
+		interrupts = <1 8>;
+		debounce = <1 0x2710>;
+		dedicated = <1 0>;
+		src-pin = <1 2>;
+		sockettype = <1 0>;
+		status = "okay";
+	};
+
+	/*
+	 * Vendor nodes the CCCI/modem driver looks up but the mainline port was
+	 * missing (values copied from the vendor mt6991.dts):
+	 *  - spm-resource-setting: the SPM resource table handed to the MD via
+	 *    the SPM_MD_PARA runtime feature.  Without it ccci_get_spm_resource()
+	 *    fails (logs line 1841) and the MD receives a dummy table.
+	 *  - security_ao: secure-MD control registers (md_sys1_platform.c).
+	 *  - mtk-slbc: System Level Cache support flag (port_kernel_interface.c).
+	 */
+	spm_resource_setting: spm-resource-setting {
+		compatible = "mediatek,spm-resource-setting";
+		setting-size = <11>;
+		setting-value-table =
+			<0x53504d00>, <0x000003e8>, <0x000000a0>, <0x00000bb8>,
+			<0x00000001>, <0x00000a82>, <0x00000001>, <0x00000b9a>,
+			<0x00000001>, <0x00000460>, <0x00000001>;
+	};
+
+	security_ao: security-ao@1800d000 {
+		compatible = "mediatek,security_ao";
+		reg = <0 0x1800d000 0 0x1000>;
+	};
+
+	slbc: slbc@117800 {
+		compatible = "mediatek,mtk-slbc";
+		reg = <0 0x00117800 0 0x400>;
+		slbc-enable = <1>;
+		slbc-all-cache-enable = <1>;
+	};
+};

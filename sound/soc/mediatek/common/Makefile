@@ -5,4 +5,6 @@ snd-soc-mtk-common-y += mtk-dai-adda-common.o
 
 obj-$(CONFIG_SND_SOC_MEDIATEK) += snd-soc-mtk-common.o
 
+obj-$(CONFIG_SND_SOC_MTK_SP_SPK_AMP) += mtk-sp-spk-amp.o
+
 obj-$(CONFIG_SND_SOC_MTK_BTCVSD) += mtk-btcvsd.o

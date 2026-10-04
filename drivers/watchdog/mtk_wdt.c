@@ -77,6 +77,7 @@ struct mtk_wdt_dev {
 	bool disable_wdt_extrst;
 	bool reset_by_toprgu;
 	bool has_swsysrst_en;
+	bool running_suspend;
 };
 
 struct mtk_wdt_data {
@@ -473,8 +474,17 @@ static int mtk_wdt_suspend(struct device *dev)
 {
 	struct mtk_wdt_dev *mtk_wdt = dev_get_drvdata(dev);
 
-	if (watchdog_active(&mtk_wdt->wdt_dev))
+	/*
+	 * The bootloader arms TOPRGU and the kernel keeps it alive from a
+	 * worker, but that worker is frozen across system sleep while the
+	 * hardware keeps counting on the 32 kHz clock.  Always stop the
+	 * hardware for suspend (also when it is running yet not opened by
+	 * userspace, so watchdog_active() is false) and restore it on resume.
+	 */
+	if (readl(mtk_wdt->wdt_base + WDT_MODE) & WDT_MODE_EN) {
+		mtk_wdt->running_suspend = true;
 		mtk_wdt_stop(&mtk_wdt->wdt_dev);
+	}
 
 	return 0;
 }
@@ -483,9 +493,10 @@ static int mtk_wdt_resume(struct device *dev)
 {
 	struct mtk_wdt_dev *mtk_wdt = dev_get_drvdata(dev);
 
-	if (watchdog_active(&mtk_wdt->wdt_dev)) {
+	if (watchdog_active(&mtk_wdt->wdt_dev) || mtk_wdt->running_suspend) {
 		mtk_wdt_start(&mtk_wdt->wdt_dev);
 		mtk_wdt_ping(&mtk_wdt->wdt_dev);
+		mtk_wdt->running_suspend = false;
 	}
 
 	return 0;

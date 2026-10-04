@@ -2292,6 +2292,16 @@ config SND_SOC_TFA989X
 	  Note that the driver currently bypasses the built-in "CoolFlux DSP"
 	  and does not support (hardware) volume control.
 
+config SND_SOC_TFA9874
+	tristate "NXP TFA98xx (TFA9874) smart speaker amplifier"
+	depends on I2C
+	select REGMAP_I2C
+	select SND_SOC_MTK_SP_SPK_AMP
+	help
+	  NXP TFA98xx / TFA9874 smart speaker amplifier driver, ported from
+	  the vendor tree for the realme GT7 (MT6991) port.  Loads the
+	  tfa98xx.cnt tuning container.
+
 config SND_SOC_TLV320ADC3XXX
 	tristate "Texas Instruments TLV320ADC3001/3101 audio ADC"
 	depends on I2C

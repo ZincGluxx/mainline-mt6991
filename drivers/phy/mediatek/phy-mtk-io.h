@@ -11,6 +11,20 @@
 #include <linux/bitfield.h>
 #include <linux/io.h>
 
+/* eUSB2 repeater submodes (vendor mtk_phy_submode) */
+enum mtk_phy_submode {
+	PHY_MODE_BC11_SW_SET = 1,
+	PHY_MODE_BC11_SW_CLR,
+	PHY_MODE_DPDMPULLDOWN_SET,
+	PHY_MODE_DPDMPULLDOWN_CLR,
+	PHY_MODE_DPPULLUP_SET,
+	PHY_MODE_DPPULLUP_CLR,
+	PHY_MODE_NORMAL,
+	PHY_MODE_FLIP,
+	PHY_MODE_SUSPEND_DEV,
+	PHY_MODE_SUSPEND_NO_DEV,
+};
+
 static inline void mtk_phy_clear_bits(void __iomem *reg, u32 bits)
 {
 	u32 tmp = readl(reg);

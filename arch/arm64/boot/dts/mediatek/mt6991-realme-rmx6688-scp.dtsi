@@ -1,0 +1,326 @@
+// SPDX-License-Identifier: (GPL-2.0 OR MIT)
+/*
+ * MT6991 (RMX6688) SCP (RV33 tinysys) nodes.
+ *
+ * Register windows / interrupts / IPI tables copied from the authenticated
+ * stock runtime FDT (/soc/scp@1c800000).  Property *names* follow the ported
+ * scp/rv driver property names (hyphenated), the values are the MT6991 ones.
+ * The SCP is the peer the modem's CCISM core synchronizes with.
+ */
+
+#include <dt-bindings/interrupt-controller/arm-gic.h>
+
+&soc {
+	scp_clk_ctrl: scp-clk-ctrl@1cf21000 {
+		compatible = "mediatek,scp-clk-ctrl", "syscon";
+		reg = <0 0x1cf21000 0 0x1000>;
+	};
+
+	scp_clk_ctrl_vlp: scp-clk-ctrl-vlp@1c00192c {
+		compatible = "mediatek,scp-clk-ctrl-vlp", "syscon";
+		reg = <0 0x1c00192c 0 0x14>;
+	};
+
+	scp: scp@1c800000 {
+		compatible = "mediatek,scp";
+		status = "okay";
+		reg = <0 0x1c800000 0 0x360000>,	/* tcm */
+		      <0 0x1cf21000 0 0x1000>,		/* cfg */
+		      <0 0x1cf24000 0 0x1000>,		/* clk */
+		      <0 0x1cf30000 0 0x1000>,		/* cfg core0 */
+		      <0 0x1cf40000 0 0x1000>,		/* cfg core1 */
+		      <0 0x1cf80000 0 0x1000>,		/* bus tracker */
+		      <0 0x1cf60000 0 0x20000>,		/* llc */
+		      <0 0x1cf2a000 0 0x4>,		/* cfg_sec */
+		      <0 0x1cfa0000 0 0x100>,		/* mbox0 base */
+		      <0 0x1cfa0100 0 0x4>,		/* mbox0 set */
+		      <0 0x1cfa010c 0 0x4>,		/* mbox0 clr */
+		      <0 0x1cf2a020 0 0x4>,		/* mbox0 init */
+		      <0 0x1cfb0000 0 0x100>,		/* mbox1 base */
+		      <0 0x1cfb0100 0 0x4>,		/* mbox1 set */
+		      <0 0x1cfb010c 0 0x4>,		/* mbox1 clr */
+		      <0 0x1cf2a024 0 0x4>,		/* mbox1 init */
+		      <0 0x1cfc0000 0 0x100>,		/* mbox2 base */
+		      <0 0x1cfc0100 0 0x4>,		/* mbox2 set */
+		      <0 0x1cfc010c 0 0x4>,		/* mbox2 clr */
+		      <0 0x1cf2a028 0 0x4>,		/* mbox2 init */
+		      <0 0x1cfd0000 0 0x100>,		/* mbox3 base */
+		      <0 0x1cfd0100 0 0x4>,		/* mbox3 set */
+		      <0 0x1cfd010c 0 0x4>,		/* mbox3 clr */
+		      <0 0x1cf2a02c 0 0x4>,		/* mbox3 init */
+		      <0 0x1cfe0000 0 0x100>,		/* mbox4 base */
+		      <0 0x1cfe0100 0 0x4>,		/* mbox4 set */
+		      <0 0x1cfe010c 0 0x4>,		/* mbox4 clr */
+		      <0 0x1cf2a030 0 0x4>,		/* mbox4 init */
+		      <0 0x1cf50000 0 0x1000>,		/* cfg_ap */
+		      <0 0x1cff0000 0 0x100>,		/* mbox5 base */
+		      <0 0x1cff0100 0 0x4>,		/* mbox5 set */
+		      <0 0x1cff010c 0 0x4>,		/* mbox5 clr */
+		      <0 0x1cf2a034 0 0x4>;		/* mbox5 init */
+
+		reg-names = "scp_sram_base",
+			    "scp_cfgreg",
+			    "scp_clkreg",
+			    "scp_cfgreg_core0",
+			    "scp_cfgreg_core1",
+			    "scp_bus_tracker",
+			    "scp_l1creg",
+			    "scp_cfgreg_sec",
+			    "mbox0_base",
+			    "mbox0_set",
+			    "mbox0_clr",
+			    "mbox0_init",
+			    "mbox1_base",
+			    "mbox1_set",
+			    "mbox1_clr",
+			    "mbox1_init",
+			    "mbox2_base",
+			    "mbox2_set",
+			    "mbox2_clr",
+			    "mbox2_init",
+			    "mbox3_base",
+			    "mbox3_set",
+			    "mbox3_clr",
+			    "mbox3_init",
+			    "mbox4_base",
+			    "mbox4_set",
+			    "mbox4_clr",
+			    "mbox4_init",
+			    "scp_cfgreg_ap",
+			    "mbox5_base",
+			    "mbox5_set",
+			    "mbox5_clr",
+			    "mbox5_init";
+
+		interrupts = <GIC_SPI 0x1a8 IRQ_TYPE_LEVEL_HIGH 0>,
+			     <GIC_SPI 0x1a9 IRQ_TYPE_LEVEL_HIGH 0>,
+			     <GIC_SPI 0x1b4 IRQ_TYPE_LEVEL_HIGH 0>,
+			     <GIC_SPI 0x2ac IRQ_TYPE_LEVEL_HIGH 0>,
+			     <GIC_SPI 0x2ad IRQ_TYPE_LEVEL_HIGH 0>,
+			     <GIC_SPI 0x2ae IRQ_TYPE_LEVEL_HIGH 0>,
+			     <GIC_SPI 0x2af IRQ_TYPE_LEVEL_HIGH 0>,
+			     <GIC_SPI 0x2b0 IRQ_TYPE_LEVEL_HIGH 0>;
+
+		interrupt-names = "ipc0", "ipc1", "mbox0", "mbox1",
+				  "mbox2", "mbox3", "mbox4", "mbox5";
+
+		mbox-attr = <0 0 0 0 0x4000 0>;
+		core-0 = "enable";
+		scp-hwvoter = "disable";
+		/* the driver reads this one camelCase */
+		scp-sram-size = <0x360000>;
+		scp-dram-size = <0x780000>;
+		scp-reg-dump-buf-size = <0x3c00>;
+		scp-tbuf-dump-buf-size = <0x400>;
+		core-nums = <2>;
+		twohart = <1>;
+		mbox-count = <5>;
+		#recv-cells-mode = <1>;
+
+		send-table =
+			<0x00 0x00 0x0b>, <0x0e 0x00 0x01>, <0x0f 0x00 0x02>,
+			<0x10 0x00 0x01>, <0x12 0x00 0x02>, <0x2e 0x00 0x01>,
+			<0x11 0x01 0x06>, <0x1d 0x01 0x10>, <0x1f 0x01 0x07>,
+			<0x04 0x02 0x01>, <0x05 0x02 0x02>, <0x06 0x02 0x01>,
+			<0x21 0x02 0x10>, <0x03 0x03 0x04>, <0x25 0x03 0x01>,
+			<0x1a 0x03 0x09>, <0x23 0x03 0x02>, <0x2d 0x03 0x01>,
+			<0x2f 0x03 0x02>, <0x30 0x03 0x02>, <0x27 0x04 0x04>,
+			<0x2b 0x04 0x04>;
+
+		recv-table =
+			<0x01 0x00 0x02 0x00 0x00 0x00 0x00>,
+			<0x02 0x00 0x1a 0x00 0x00 0x00 0x00>,
+			<0x24 0x00 0x01 0x00 0x00 0x00 0x00>,
+			<0x0f 0x00 0x01 0x01 0x00 0x00 0x00>,
+			<0x16 0x00 0x01 0x00 0x00 0x00 0x00>,
+			<0x15 0x01 0x06 0x00 0x00 0x00 0x00>,
+			<0x1e 0x01 0x02 0x00 0x00 0x00 0x00>,
+			<0x20 0x01 0x07 0x00 0x00 0x00 0x00>,
+			<0x31 0x01 0x02 0x00 0x00 0x00 0x00>,
+			<0x05 0x02 0x01 0x01 0x00 0x00 0x00>,
+			<0x08 0x02 0x0a 0x00 0x00 0x00 0x00>,
+			<0x22 0x02 0x10 0x00 0x00 0x00 0x00>,
+			<0x07 0x03 0x02 0x00 0x00 0x00 0x00>,
+			<0x26 0x03 0x01 0x00 0x00 0x00 0x00>,
+			<0x1c 0x03 0x05 0x00 0x00 0x00 0x00>,
+			<0x1b 0x03 0x02 0x00 0x00 0x00 0x00>,
+			<0x23 0x03 0x04 0x01 0x00 0x00 0x00>,
+			<0x2f 0x03 0x02 0x01 0x00 0x00 0x00>,
+			<0x30 0x03 0x02 0x00 0x00 0x00 0x01>,
+			<0x28 0x04 0x04 0x00 0x00 0x00 0x00>,
+			<0x2c 0x04 0x04 0x00 0x00 0x00 0x00>;
+
+		scp-feature-tbl =
+			<0x00 0x96 0x01>, <0x01 0x00 0x00>, <0x02 0x1a 0x00>,
+			<0x03 0x00 0x00>, <0x04 0xc8 0x01>, <0x05 0x00 0x00>,
+			<0x06 0x190 0x01>, <0x07 0x0a 0x01>, <0x08 0x50 0x01>,
+			<0x09 0x2b 0x01>, <0x0a 0x16 0x01>, <0x0b 0x96 0x01>,
+			<0x0c 0x190 0x01>, <0x0d 0xc8 0x00>;
+
+		scp-dram-region = "enable";
+		scp-protect = "enable";
+		secure-dump = "enable";
+		secure-dump-size = <0xba8000>;
+		scp-pm-notify = "enable";
+		scp-thermal-wq = "disable";
+		scp-low-pwr-dbg = "enable";
+		scp-cfgreg-ap-en = "enable";
+		scp-read-infra-irq-status = "enable";
+		scp-scpsys-regmap = "enable";
+		scp-bus-tracker-ver = <2>;
+		scp-mbrain = "enable";
+		scp-recovery-wfi-detect = "enable";
+		scp-ipi-timeout-bugon = "enable";
+		scp-mem-key = "mediatek,reserve-memory-scp_share";
+
+		scp-mem-tbl =
+			<0x00 0x00 0x00>, <0x01 0xca700 0x00>,
+			<0x02 0x100000 0x00>, <0x03 0x180000 0x00>,
+			<0x04 0x19000 0x00>, <0x05 0xa000 0x00>,
+			<0x07 0x1a000 0x00>, <0x08 0x10000 0x00>,
+			<0x09 0x1000 0x00>, <0x0a 0x2000 0x00>,
+			<0x0b 0x100 0x00>, <0x0c 0x100 0x00>,
+			<0x0d 0x780000 0x00>, <0x0f 0x10000 0x00>,
+			<0x11 0x8000 0x00>, <0x12 0x8000 0x00>,
+			<0x13 0x200 0x00>, <0x1a 0x100000 0x00>,
+			<0x1b 0x11000 0x00>, <0x1c 0x10000 0x00>;
+
+		memorydump = <0x360000 0xc4000 0x3c00 0x400 0x780000>;
+		scp-resource-reg-dump-cell = <2>;
+		scp-resource-reg-dump = <0x1c013008 0x4 0x1c001908 0x4
+					 0x1c001818 0x4>;
+		scp-clk-fmeter-dump = "enable";
+		scp-u1-id = <0x3b>;
+		scp-u2-id = <0x3c>;
+		scp-infracfg = <&infracfg_ao>;
+		awake-timeout = <0x2710>;
+	};
+
+	scp_dvfs: scp-dvfs {
+		/* vendor MT6991 driver matches the hyphenated name */
+		compatible = "mediatek,scp-dvfs";
+		clocks = <&vlp_cksys 0x02>, <&cksys 0x8c>;
+		clock-names = "clk_mux", "clk_pll_0";
+		fmeter-clksys = <&vlp_cksys>;
+		ulposc-clksys = <&vlp_cksys>;
+		/*
+		 * vendor driver reads a u32: property ABSENT => disabled.
+		 * <0> explicitly enables DVFS (SCP PLL/clock must be up
+		 * before any SCP/VLP register access).
+		 */
+		scp-dvfs-disable = <0>;
+		scp-cores = <0x07>;
+		scp-core-online-mask = <0x07>;
+		vlp-support;
+		ips-support;
+		dvfs-opp = <0x8c618 0xb71b0 0xff 0xfff 0x190 0 0
+			    0x9eb10 0xb71b0 0xff 0xfff 0x28a 0 0
+			    0xb71b0 0xb71b0 0xff 0xfff 0x352 0 0>;
+		do-ulposc-cali;
+		scp-clk-ctrl = <&scp_clk_ctrl>;
+		scp-clk-ctrl-vlp = <&scp_clk_ctrl_vlp>;
+		scp-clk-hw-ver = "v1";
+		ulposc-cali-ver = "v3";
+		ulposc-cali-alg-ver = <2>;
+		ulposc-cali-ext-phase;
+		ulposc-cali-num = <3>;
+		ulposc-cali-target = <0x190 0x28a 0x352>;
+		ulposc-cali-config = <0x4eaa340 0x10000a00 0x484f
+				      0x416a540 0x10000a00 0x484f
+				      0x55ea540 0x10000a00 0x484f>;
+		clk-dbg-ver = "v4";
+		ccf-fmeter-support;
+		fmeter-args-u2-cali = <0x31 0x00>;
+		fmeter-args-u2-result = <0x3c 0x00>;
+		scp-dvfs-flag = "enable";
+	};
+};
+
+/* Vendor MT6991 clock providers (cksys / vlp_cksys) for the SCP DVFS. */
+/ {
+	cksys: syscon@10000000 {
+		compatible = "mediatek,mt6991-cksys", "syscon";
+		reg = <0 0x10000000 0 0x800>;
+		#clock-cells = <1>;
+	};
+	cksys_gp2: syscon@1000c000 {
+		compatible = "mediatek,mt6991-cksys_gp2", "syscon";
+		reg = <0 0x1000c000 0 0x800>;
+		#clock-cells = <1>;
+	};
+	vlp_cksys: syscon@1c016000 {
+		compatible = "mediatek,mt6991-vlp_cksys", "syscon";
+		reg = <0 0x1c016000 0 0x1000>;
+		#clock-cells = <1>;
+	};
+	/* Audio (AFE) clock provider; overlaps the AFE block at 0x1a110000. */
+	audiosys: syscon@1a110000 {
+		compatible = "mediatek,mt6991-audiosys", "syscon";
+		reg = <0 0x1a110000 0 0x1000>;
+		#clock-cells = <1>;
+	};
+	/* PLL/syscon bases the vendor fmeter looks up by compatible */
+	mt6991_apmixedsys: syscon@10000800 {
+		compatible = "mediatek,mt6991-apmixedsys", "syscon";
+		reg = <0 0x10000800 0 0x1000>;
+	};
+	mt6991_apmixedsys_gp2: syscon@1000c800 {
+		compatible = "mediatek,mt6991-apmixedsys_gp2", "syscon";
+		reg = <0 0x1000c800 0 0x1000>;
+	};
+	mfgpll_pll_ctrl: syscon@4b810000 {
+		compatible = "mediatek,mt6991-mfgpll_pll_ctrl", "syscon";
+		reg = <0 0x4b810000 0 0x400>;
+	};
+	mfgpll_sc0_pll_ctrl: syscon@4b810400 {
+		compatible = "mediatek,mt6991-mfgpll_sc0_pll_ctrl", "syscon";
+		reg = <0 0x4b810400 0 0x400>;
+	};
+	mfgpll_sc1_pll_ctrl: syscon@4b810800 {
+		compatible = "mediatek,mt6991-mfgpll_sc1_pll_ctrl", "syscon";
+		reg = <0 0x4b810800 0 0x1000>;
+	};
+	ccipll_pll_ctrl: syscon@c1e0000 {
+		compatible = "mediatek,mt6991-ccipll_pll_ctrl", "syscon";
+		reg = <0 0xc1e0000 0 0x400>;
+	};
+	armpll_ll_pll_ctrl: syscon@c1e0400 {
+		compatible = "mediatek,mt6991-armpll_ll_pll_ctrl", "syscon";
+		reg = <0 0xc1e0400 0 0x400>;
+	};
+	armpll_bl_pll_ctrl: syscon@c1e0800 {
+		compatible = "mediatek,mt6991-armpll_bl_pll_ctrl", "syscon";
+		reg = <0 0xc1e0800 0 0x400>;
+	};
+	armpll_b_pll_ctrl: syscon@c1e0c00 {
+		compatible = "mediatek,mt6991-armpll_b_pll_ctrl", "syscon";
+		reg = <0 0xc1e0c00 0 0x1000>;
+	};
+	ptppll_pll_ctrl: syscon@c1e4000 {
+		compatible = "mediatek,mt6991-ptppll_pll_ctrl", "syscon";
+		reg = <0 0xc1e4000 0 0x1000>;
+	};
+};
+
+/* Connectivity <-> SCP bridge (connscp.ko); values from the stock FDT. */
+/ {
+	connscp: connscp {
+		compatible = "mediatek,mt6991-conn_scp";
+		scp-shm-size = <0x96000>;
+		scp-remap-offset = <0x445000>;
+		scp-remap-size = <0x520000>;
+		scp-remap-addr = <0x0>;
+		batching-buf-size = <0x4b000>;
+		report-region-idx = <0x3>;
+		report-buf-addr = <0x0 0xee045000>;
+		report-buf-size = <0x4b000>;
+		batch-region-idx = <0x9>;
+		ipi-mbox-size = <0x40>;
+		dfd-region-idx = <0x4>;
+		dfd-cmd-addr = <0x0 0xee090000>;
+		dfd-cmd-size = <0x9000>;
+		dfd-value-addr = <0x0 0xee099000>;
+		dfd-value-size = <0x9000>;
+		dfd-value-region-size = <0x3000>;
+	};
+};

@@ -66,6 +66,7 @@
 		mediatek,suspend-mode-l12;
 		pextpcfg = <&pextp0cfg_ao_clk>;
 		pmrc = <&srclken_rc>;
+		/* consumer claims the PEXTP MAC0 SPM domain, like the vendor DTS */
 		clocks = <&pextp0cfg_ao_clk CLK_PEXT_PEXTP_MAC_P0_REF>,
 			 <&pextp0cfg_ao_clk CLK_PEXT_PEXTP_MAC_P0_PL_P>,
 			 <&pextp0cfg_ao_clk CLK_PEXT_PEXTP_MAC_P0_TL>,

@@ -199,6 +199,9 @@ struct mtk_xsphy {
 	bool tx_chirpK_disable;
 	bool bc11_switch_disable;
 	int sw_ver;
+	/* optional eUSB2 repeaters (e.g. MT6379), driven on every connect */
+	int num_rptr;
+	struct phy **repeater;
 	struct xsphy_instance *phys[] __counted_by(nphys);
 };
 
@@ -661,12 +664,17 @@ static int mtk_phy_init(struct phy *phy)
 {
 	struct xsphy_instance *inst = phy_get_drvdata(phy);
 	struct mtk_xsphy *xsphy = dev_get_drvdata(phy->dev.parent);
-	int ret;
+	int ret, i;
 
 	ret = clk_prepare_enable(inst->ref_clk);
 	if (ret) {
 		dev_err(xsphy->dev, "failed to enable ref_clk\n");
 		return ret;
+	}
+
+	for (i = 0; i < xsphy->num_rptr; i++) {
+		if (!IS_ERR_OR_NULL(xsphy->repeater[i]))
+			phy_init(xsphy->repeater[i]);
 	}
 
 	switch (inst->type) {
@@ -693,6 +701,12 @@ static int mtk_phy_power_on(struct phy *phy)
 {
 	struct xsphy_instance *inst = phy_get_drvdata(phy);
 	struct mtk_xsphy *xsphy = dev_get_drvdata(phy->dev.parent);
+	int i;
+
+	for (i = 0; i < xsphy->num_rptr; i++) {
+		if (!IS_ERR_OR_NULL(xsphy->repeater[i]))
+			phy_power_on(xsphy->repeater[i]);
+	}
 
 	if (inst->type == PHY_TYPE_USB2) {
 		u2_phy_instance_power_on(xsphy, inst);
@@ -706,6 +720,12 @@ static int mtk_phy_power_off(struct phy *phy)
 {
 	struct xsphy_instance *inst = phy_get_drvdata(phy);
 	struct mtk_xsphy *xsphy = dev_get_drvdata(phy->dev.parent);
+	int i;
+
+	for (i = 0; i < xsphy->num_rptr; i++) {
+		if (!IS_ERR_OR_NULL(xsphy->repeater[i]))
+			phy_power_off(xsphy->repeater[i]);
+	}
 
 	if (inst->type == PHY_TYPE_USB2)
 		u2_phy_instance_power_off(xsphy, inst);
@@ -716,6 +736,13 @@ static int mtk_phy_power_off(struct phy *phy)
 static int mtk_phy_exit(struct phy *phy)
 {
 	struct xsphy_instance *inst = phy_get_drvdata(phy);
+	struct mtk_xsphy *xsphy = dev_get_drvdata(phy->dev.parent);
+	int i;
+
+	for (i = 0; i < xsphy->num_rptr; i++) {
+		if (!IS_ERR_OR_NULL(xsphy->repeater[i]))
+			phy_exit(xsphy->repeater[i]);
+	}
 
 	clk_disable_unprepare(inst->ref_clk);
 	return 0;
@@ -725,8 +752,15 @@ static int mtk_phy_set_mode(struct phy *phy, enum phy_mode mode, int submode)
 {
 	struct xsphy_instance *inst = phy_get_drvdata(phy);
 	struct mtk_xsphy *xsphy = dev_get_drvdata(phy->dev.parent);
+	int i;
 
 	if (inst->type == PHY_TYPE_USB2) {
+		/* propagate to eUSB2 repeaters (MT6379 pulls up D+) */
+		for (i = 0; i < xsphy->num_rptr; i++) {
+			if (!IS_ERR_OR_NULL(xsphy->repeater[i]))
+				phy_set_mode_ext(xsphy->repeater[i],
+						 mode, submode);
+		}
 		/* For device mode: apply device props and set IDDIG */
 		if (mode == PHY_MODE_USB_DEVICE && !submode) {
 			u2_phy_props_set(xsphy, inst);
@@ -822,7 +856,7 @@ static int mtk_xsphy_probe(struct platform_device *pdev)
 	struct mtk_xsphy *xsphy;
 	struct resource res;
 	size_t nphys;
-	int port;
+	int port, i;
 
 	nphys = of_get_child_count(np);
 	xsphy = devm_kzalloc(dev, offsetof(struct mtk_xsphy, phys) +
@@ -854,6 +888,22 @@ static int mtk_xsphy_probe(struct platform_device *pdev)
 				"tx-chirpk-capable");
 	xsphy->bc11_switch_disable = device_property_read_bool(dev,
 			"bc11-switch-disable");
+
+	/* optional eUSB2 repeaters listed in this node's "phys" property */
+	xsphy->num_rptr = of_count_phandle_with_args(np, "phys", "#phy-cells");
+	if (xsphy->num_rptr > 0) {
+		xsphy->repeater = devm_kcalloc(dev, xsphy->num_rptr,
+					       sizeof(*xsphy->repeater),
+					       GFP_KERNEL);
+		if (!xsphy->repeater)
+			return -ENOMEM;
+		for (i = 0; i < xsphy->num_rptr; i++) {
+			xsphy->repeater[i] =
+				devm_of_phy_get_by_index(dev, np, i);
+			if (IS_ERR(xsphy->repeater[i]))
+				dev_info(dev, "failed to get repeater-%d\n", i);
+		}
+	}
 
 	port = 0;
 	for_each_child_of_node_scoped(np, child_np) {

@@ -1902,8 +1902,15 @@ int mtk_pcie_remove_port(int port)
 
 	mtk_pcie_dump_link_info(port);
 
-	device_release_driver(&pdev->dev);
-
+	/*
+	 * Do not unbind the host here.  The vendor Wi-Fi driver calls this
+	 * before its probe to reset a connsys chip that may have been powered
+	 * on by the bootloader, but mainline probes this host fresh.  Unbinding
+	 * triggers the vendor Wi-Fi driver's PCIe teardown, which leaks its MSI
+	 * vectors (mtk_pci_driver has no .remove) and crashes
+	 * msi_device_data_release().  The host is already in a clean state, so
+	 * the pre-probe remove is unnecessary.
+	 */
 	return 0;
 }
 EXPORT_SYMBOL(mtk_pcie_remove_port);

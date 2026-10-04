@@ -363,6 +363,12 @@ config SND_SOC_MT8365_MT6357
 	  Select Y if you have such device.
 	  If unsure select "N".
 
+config SND_SOC_MTK_SP_SPK_AMP
+	bool "MediaTek smart speaker amplifier framework"
+	help
+	  MediaTek smart speaker amplifier helpers (IPI transport) used by the
+	  NXP TFA98xx driver on the MT6991 port.
+
 config SND_SOC_MT8196
 	tristate "ASoC support for Mediatek MT8196 chip"
 	depends on ARCH_MEDIATEK

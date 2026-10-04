@@ -1137,4 +1137,6 @@ config COMMON_CLK_MT8516_AUDSYS
 	help
 	  This driver supports MediaTek MT8516 audsys clocks.
 
+source "drivers/clk/mediatek/mt6991/Kconfig"
+
 endmenu

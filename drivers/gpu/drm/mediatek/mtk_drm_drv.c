@@ -1291,25 +1291,20 @@ static void mtk_drm_shutdown(struct platform_device *pdev)
 
 static int mtk_drm_sys_prepare(struct device *dev)
 {
-	struct mtk_drm_private *private = dev_get_drvdata(dev);
-	struct drm_device *drm = private->drm;
-
-	if (private->drm_master)
-		return drm_mode_config_helper_suspend(drm);
-	else
-		return 0;
+	/*
+	 * Bring-up: drm_mode_config_helper_suspend() -> atomic "disable all
+	 * CRTCs" commit hangs on this port's EXDMA/blender pipeline, which
+	 * leaves the panel black while the SoC is stuck in device suspend.
+	 * Skip display system-suspend so the rest of the system can reach
+	 * s2idle (the panel simply stays lit).  Re-enable once the display
+	 * pipeline's system suspend is made self-contained.
+	 */
+	return 0;
 }
 
 static void mtk_drm_sys_complete(struct device *dev)
 {
-	struct mtk_drm_private *private = dev_get_drvdata(dev);
-	struct drm_device *drm = private->drm;
-	int ret = 0;
-
-	if (private->drm_master)
-		ret = drm_mode_config_helper_resume(drm);
-	if (ret)
-		dev_err(dev, "Failed to resume\n");
+	/* Mirrors mtk_drm_sys_prepare(): nothing was suspended. */
 }
 
 static const struct dev_pm_ops mtk_drm_pm_ops = {

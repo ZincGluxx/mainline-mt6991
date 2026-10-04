@@ -2618,8 +2618,19 @@ void rsnParserCheckForRSNCCMPPSK(struct ADAPTER *prAdapter,
 			}
 		}
 
+		/*
+		 * Mainline/desktop port: also accept PSK-SHA256 and FT-PSK.
+		 * The AP advertises WPA2/WPA3-transition (WPA-PSK
+		 * WPA-PSK-SHA256 ...), and stock clients (Windows, Android)
+		 * select PSK-SHA256; rejecting it made the association fail
+		 * with STATUS_CODE_INVALID_AKMP (status 43) even though the
+		 * rest of the WPA2 handshake is fine.
+		 */
 		if ((rRsnIe.u4AuthKeyMgtSuiteCount != 1)
 			|| ((rRsnIe.au4AuthKeyMgtSuite[0] != RSN_AKM_SUITE_PSK)
+			&& (rRsnIe.au4AuthKeyMgtSuite[0] !=
+			    RSN_AKM_SUITE_PSK_SHA256)
+			&& (rRsnIe.au4AuthKeyMgtSuite[0] != RSN_AKM_SUITE_FT_PSK)
 #if CFG_SUPPORT_SOFTAP_WPA3
 			&& (!rsnKeyMgmtSae(rRsnIe.au4AuthKeyMgtSuite[0]))
 #endif

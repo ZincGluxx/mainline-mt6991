@@ -1,0 +1,18 @@
+# SPDX-License-Identifier: GPL-2.0
+config CLK_MT6991
+	tristate "Vendor MT6991 clock tree (cksys / vlp_cksys)"
+	depends on COMMON_CLK
+	help
+	  Vendor MT6991 clock providers (cksys / vlp_cksys) ported from the
+	  vendor kernel.  Provides the SCP clock mux/PLL that scp-dvfs needs.
+	  Say M to build clk-mt6991-drv.ko.
+
+config MTK_FMETER_BUILTIN
+	bool
+	depends on COMMON_CLK
+	default y if CLK_MT6991
+	help
+	  Built-in dispatch layer for the vendor MT6991 fmeter provider.  Keeps
+	  mt_get_fmeter_freq()/mt_get_fmeter_id() available to built-in callers
+	  (uarthub debug) and loadable modules (scp.ko); the provider registers
+	  its ops at runtime from clk-mt6991-drv.ko.

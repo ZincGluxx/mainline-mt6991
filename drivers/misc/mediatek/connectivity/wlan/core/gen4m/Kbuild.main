@@ -99,7 +99,11 @@ ifeq ($(KBUILD_MODPOST_FAIL_ON_WARNINGS),)
     KBUILD_MODPOST_FAIL_ON_WARNINGS=y
 endif
 
-DRIVER_BUILD_DATE=$(shell date +%Y%m%d%H%M%S)
+# Mainline port: derive the build-date string from this makefile's mtime instead
+# of the current time.  A live $(shell date) changes the compile command on every
+# run, which makes kbuild rebuild every WLAN object (and the whole connectivity
+# tree) each time even when no source changed.
+DRIVER_BUILD_DATE=$(shell date +%Y%m%d%H%M%S -r $(src)/Kbuild.main 2>/dev/null || echo 00000000000000)
 ccflags-y += -DDRIVER_BUILD_DATE='"$(DRIVER_BUILD_DATE)"'
 # ---------------------------------------------------
 # Compile Options
@@ -1341,7 +1345,12 @@ ifeq ($(CONFIG_MTK_WIFI_CONNAC3X), y)
     ifeq ($(CONFIG_MTK_WIFI_PMIC_QUERY), y)
         ccflags-y += -DCFG_MTK_WIFI_PMIC_QUERY=1
     endif
-    ccflags-y += -DCFG_DRIVER_INITIAL_RUNNING_MODE=6
+    # RUNNING_P2P_MODE (0), not the vendor's RUNNING_P2P_NO_GROUP_MODE (6):
+    # mode 6 pre-registers all KAL_P2P_NUM (3) P2P role slots, so the
+    # wlan0 STA->AP conversion (NetworkManager hotspot / hostapd) fails with
+    # "resource invalid, u4DeviceNum=3".  Mode 0 registers only p2p0 and
+    # leaves the AP role slots free.
+    ccflags-y += -DCFG_DRIVER_INITIAL_RUNNING_MODE=0
     ifeq ($(CONFIG_MTK_COMBO_WIFI_HIF), pcie)
         ifeq ($(CONFIG_MTK_WIFI_SUPPORT_UDS_FWDL), y)
             ccflags-y += -DCFG_MTK_WIFI_SUPPORT_UDS_FWDL=1
