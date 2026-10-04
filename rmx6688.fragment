@@ -147,7 +147,7 @@ CONFIG_ARM64_EMBEDDED_DTB_SOURCE="arch/arm64/boot/dts/mediatek/mt6991-realme-rmx
 # every gate the bootloader left enabled but no mainline driver claims yet --
 # including, quite possibly, the display pipeline the framebuffer prints
 # through.  With the flag the kernel leaves hardware exactly as handed over.
-CONFIG_CMDLINE="kvm-arm.mode=nvhe earlycon=uart8250,mmio32,0x16000000 console=ttyS0,115200n8 console=tty0 ignore_loglevel no_console_suspend panic=0 nokaslr clk_ignore_unused pd_ignore_unused eusb2_keep_calib cma=256M swiotlb=65536"
+CONFIG_CMDLINE="earlycon=uart8250,mmio32,0x16000000 console=ttyS0,115200n8 console=tty0 ignore_loglevel no_console_suspend panic=0 nokaslr clk_ignore_unused pd_ignore_unused eusb2_keep_calib cma=256M swiotlb=65536"
 CONFIG_CMDLINE_FORCE=y
 
 # --- Build hygiene on-device ---------------------------------------------
@@ -338,4 +338,4 @@ CONFIG_MTK_MD1_SUPPORT=14
 CONFIG_MTK_SCPSYS_MT6991=y
 CONFIG_CLK_MT6991=m
 CONFIG_PAGE_POOL=y
-CONFIG_CMDLINE="kvm-arm.mode=nvhe earlycon=uart8250,mmio32,0x16000000 console=ttyS0,115200n8 console=tty0 ignore_loglevel no_console_suspend pm_debug_messages panic=0 nokaslr clk_ignore_unused pd_ignore_unused eusb2_keep_calib cma=256M swiotlb=65536 printk.devkmsg=on"
+CONFIG_CMDLINE="earlycon=uart8250,mmio32,0x16000000 console=ttyS0,115200n8 console=tty0 ignore_loglevel no_console_suspend pm_debug_messages panic=0 nokaslr clk_ignore_unused pd_ignore_unused eusb2_keep_calib cma=256M swiotlb=65536 printk.devkmsg=on"
