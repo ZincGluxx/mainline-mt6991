@@ -16,11 +16,12 @@ aarch64)完成,无交叉工具链。历史/约束见文末。
 | 屏幕亮度 | AE031 面板 DCS `0x51`(非 PWM),自带 `backlight` 设备;保守上限 `0x800`/默认 `0x600`(厂商正常上限 `0xe0e`/硬件 `0xffe`),GNOME 滑块可调 |
 | GPU | panthor / Immortalis-G925:probe、渲染、devfreq/DVFS(338–1612MHz);修了空闲 runtime-PM 循环崩溃 |
 | 触摸屏 | Synaptics S3910 (TCM v1, SPI6):单点/多点、量程 12799×27999→1280×2800、边缘校准;固件不自动刷写 |
-| USB-C Gadget | CDC-ACM (g_serial);修 `VBUS_FRC_EN`、xsphy vendor 序列、NXP repeater 驱动 |
+| USB-C Gadget | CDC-ACM (g_serial),Windows 识别为 USB 串口。**反复拔插都能重新枚举**(2026-10-04:完整移植厂商 eUSB2 repeater phy 链——MT6379 repeater 作 phy provider + xsphy 逐次传播 + mtu3 传播 D+ 上拉 + init 重插 watcher);修 `VBUS_FRC_EN`、xsphy vendor 序列、NXP repeater 驱动 |
 | WiFi | MT6653 (connv3, PCIe HIF):扫描/认证/关联/WPA2 四次握手/联网全部正常;conninfra+connadp+connfem+gen4m+PCIe 全量内建 |
 | Connectivity 电源栈 | connv3/conninfra、connfem(FEM)、NVRAM 加载、自动上电 |
-| 电池电量计 | TI bq27541 @ i2c0 0x55;`/sys/class/power_supply/` 暴露容量/电压/电流/温度,GNOME 显示电量。只读 |
+| 电池电量计 | TI bq27541 @ i2c0 0x55;`/sys/class/power_supply/` 暴露容量/电压/电流/温度,GNOME 显示电量。只读。**i2c0 必须 100kHz**(400kHz 会超时读不到) |
 | 充电 (5V 标准) | MT6379(SPMI USID 0x0e):内核驱动(SPMI 控制器 + `mt6379_charger`)把 `AICR`/`ICHG` 提到 3A 并每 3s 轮询重设(抗拔插)。实测 `Charging` ~2.6A;**厂商快充(VOOC)未做** |
+| 按键 (电源/音量) | 电源=MT6363 PWRKEY、音量上=MT6363 HOMEKEY(`mt6363-spmi-keys` 轮询 `TOPSTATUS`);音量下=`gpio-keys` GPIO11。实机可用 |
 | 热管理 (LVTS) | 31 传感器(25 有效);LVTS 硬件热复位保护,不做软件降频 |
 | 桌面系统 | Ubuntu 24.04 + GNOME/mutter 稳定运行 |
 | 日志通道 | pstore/ramoops 可保存 panic 前日志 |
@@ -37,6 +38,7 @@ aarch64)完成,无交叉工具链。历史/约束见文末。
 | 冷启动无 LK 显示 | 依赖 bootloader 显示的中间级(PHY/mutex/blender)尚未由主线完整接管 |
 | 10-bit / HDR scanout | 已试,不可行:厂商 OVL 只支持 ABGR/XBGR2101010,GNOME/mutter 只用 XRGB2101010(厂商未实现),且下游是 bootloader 的 8-bit |
 | MT6373/MT6363 PMIC 驱动 | 主线上电走 raw SPMI/寄存器 hack(触摸 AVDD、USB repeater 等由 init 处理) |
+| 音频 / 扬声器 | AFE/音频时钟/电源域、NXP `tfa98xx` + `mtk-sp-spk-amp`、`tfa98xx.cnt` 均已就绪;**卡在扬声器功放 TFA9873 的供电轨**(i2c6 0x34/0x35 复位已做但仍 NAK);该轨软件不可见,需原理图/实测 |
 
 ## 布局
 

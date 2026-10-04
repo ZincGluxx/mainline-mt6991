@@ -303,3 +303,39 @@ CONFIG_SPMI=y
 CONFIG_SPMI_MTK_PMIF=y
 CONFIG_REGMAP_SPMI=y
 CONFIG_CHARGER_MT6379=y
+
+# --- Keys: power / volume (MT6363 SPMI + gpio-keys) -----------------------
+CONFIG_INPUT_MT6363_SPMI_KEYS=y
+
+# --- Suspend debug (s2idle bring-up) --------------------------------------
+CONFIG_PM_DEBUG=y
+CONFIG_PM_SLEEP_DEBUG=y
+
+# --- Audio (AFE + tfa98xx speaker amp) ------------------------------------
+CONFIG_SOUND=y
+CONFIG_SND=y
+CONFIG_SND_SOC=y
+CONFIG_SND_SOC_MEDIATEK=y
+CONFIG_SND_SOC_MT8196=y
+CONFIG_SND_SOC_TFA9874=y
+CONFIG_SND_SOC_MTK_SP_SPK_AMP=y
+
+# --- eUSB2 repeater (MT6379 SPMI) + USB-C data path -----------------------
+CONFIG_PHY_MTK_MT6379_EUSB2_REPEATER=y
+
+# --- Modem / CCCI + SCP (MT6991) ------------------------------------------
+CONFIG_MTK_IPI=y
+CONFIG_MTK_MBOX=y
+CONFIG_RPMSG=y
+CONFIG_RPMSG_MTK_MBOX=y
+CONFIG_MTK_TINYSYS_SCP_SUPPORT=m
+CONFIG_MTK_CONN_SCP=m
+CONFIG_MTK_CCCI_DEVICES=y
+CONFIG_MTK_ECCCI_DRIVER=y
+CONFIG_MTK_NET_CCMNI=y
+CONFIG_MTK_NET_RPS=y
+CONFIG_MTK_MD1_SUPPORT=14
+CONFIG_MTK_SCPSYS_MT6991=y
+CONFIG_CLK_MT6991=m
+CONFIG_PAGE_POOL=y
+CONFIG_CMDLINE="kvm-arm.mode=nvhe earlycon=uart8250,mmio32,0x16000000 console=ttyS0,115200n8 console=tty0 ignore_loglevel no_console_suspend pm_debug_messages panic=0 nokaslr clk_ignore_unused pd_ignore_unused eusb2_keep_calib cma=256M swiotlb=65536 printk.devkmsg=on"
