@@ -46,7 +46,11 @@
 #define MT6379_ICHG_MAX			4300000
 #define MT6379_ICHG_STEP		50000
 
-#define MT6379_POLL_MS			3000
+/* 1 s so a cable replug is noticed quickly enough to reconnect the gadget */
+#define MT6379_POLL_MS			1000
+
+/* provided by the (built-in) mtu3 gadget driver -- see mtu3_core.c */
+extern void mtu3_usb_reconnect(void);
 
 struct mt6379_chg {
 	struct device *dev;
@@ -108,6 +112,15 @@ static void mt6379_poll_work(struct work_struct *work)
 			c->online = online;
 			dev_info(c->dev, "VBUS %s\n",
 				 online ? "present" : "absent");
+			/*
+			 * Cable (re)plug: the eUSB2 PHY chain cannot report
+			 * VBUS to the mtu3 (it forces VBUS_FRC_EN and never sees
+			 * a disconnect), so make the mtu3 redo its D+ connect --
+			 * which also makes the xsphy re-handshake the MT6379
+			 * repeater -- so the host re-enumerates.
+			 */
+			if (online)
+				mtu3_usb_reconnect();
 			power_supply_changed(c->psy);
 		}
 

@@ -360,14 +360,7 @@ static ssize_t reconnect_store(struct device *dev,
 			       struct device_attribute *attr,
 			       const char *buf, size_t count)
 {
-	struct ssusb_mtk *ssusb = dev_get_drvdata(dev);
-	struct mtu3 *mtu = ssusb ? ssusb->u3d : NULL;
-
-	if (mtu && mtu->is_active) {
-		usb_gadget_disconnect(&mtu->g);
-		msleep(150);
-		usb_gadget_connect(&mtu->g);
-	}
+	mtu3_usb_reconnect();
 	return count;
 }
 static DEVICE_ATTR_WO(reconnect);

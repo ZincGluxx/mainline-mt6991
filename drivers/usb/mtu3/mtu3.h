@@ -435,6 +435,7 @@ void mtu3_ep_stall_set(struct mtu3_ep *mep, bool set);
 void mtu3_start(struct mtu3 *mtu);
 void mtu3_stop(struct mtu3 *mtu);
 void mtu3_dev_on_off(struct mtu3 *mtu, int is_on);
+void mtu3_usb_reconnect(void);
 
 int mtu3_gadget_setup(struct mtu3 *mtu);
 void mtu3_gadget_cleanup(struct mtu3 *mtu);

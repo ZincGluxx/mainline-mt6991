@@ -946,6 +946,26 @@ static int mtu3_set_dma_mask(struct mtu3 *mtu)
 	return ret;
 }
 
+/*
+ * Force a D+ disconnect -> connect so the host re-enumerates.  The eUSB2 PHY
+ * chain cannot report VBUS, so mtu3 forces VBUS_FRC_EN|VBUS_ON and never sees
+ * a disconnect; the MT6379 charger driver calls this on a real VBUS rising
+ * edge (a cable replug) to re-drive the connect -- which also makes the xsphy
+ * re-handshake the eUSB2 repeater chain.  Also exposed as a sysfs attribute
+ * on the mtu3 device.
+ */
+static struct mtu3 *g_mtu3;
+
+void mtu3_usb_reconnect(void)
+{
+	if (g_mtu3 && g_mtu3->is_active) {
+		usb_gadget_disconnect(&g_mtu3->g);
+		msleep(150);
+		usb_gadget_connect(&g_mtu3->g);
+	}
+}
+EXPORT_SYMBOL_GPL(mtu3_usb_reconnect);
+
 int ssusb_gadget_init(struct ssusb_mtk *ssusb)
 {
 	struct device *dev = ssusb->dev;
@@ -980,6 +1000,7 @@ int ssusb_gadget_init(struct ssusb_mtk *ssusb)
 	mtu->ippc_base = ssusb->ippc_base;
 	ssusb->mac_base	= mtu->mac_base;
 	ssusb->u3d = mtu;
+	g_mtu3 = mtu;
 	mtu->ssusb = ssusb;
 	mtu->max_speed = usb_get_maximum_speed(dev);
 
