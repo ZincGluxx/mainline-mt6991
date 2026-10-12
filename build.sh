@@ -189,6 +189,49 @@ if [ ! -f "$OUT/Module.symvers" ] && [ -f "$OUT/vmlinux.symvers" ]; then
 	cp "$OUT/vmlinux.symvers" "$OUT/Module.symvers"
 fi
 
+# include/generated/utsrelease.h carries UTS_RELEASE, which both the kernel
+# banner (init/version.o) and every module's vermagic are compiled from.
+# kbuild's rule is "utsrelease.h: include/config/kernel.release FORCE" and
+# filechk only rewrites the file when the string changes, but an external
+# module build (make M=<dir> modules) has no dependency on that rule, so the
+# .ko get linked from whatever the header happened to hold -- after a commit
+# that is the previous release, and the running kernel then refuses the module
+# with -ENOEXEC.  Write the header explicitly (exactly what filechk produces,
+# including its 64-char cap) before anything is compiled, so the Image and
+# every .ko carry the same string.
+want="$(make -s O="$OUT" kernelrelease)"
+if [ ${#want} -gt 64 ]; then
+	echo "  FAILED: '$want' exceeds 64 characters"; exit 1
+fi
+if [ "$(cat "$OUT/include/generated/utsrelease.h" 2>/dev/null)" \
+	!= "#define UTS_RELEASE \"$want\"" ]; then
+	mkdir -p "$OUT/include/generated"
+	printf '#define UTS_RELEASE "%s"\n' "$want" \
+		> "$OUT/include/generated/utsrelease.h"
+	echo "  utsrelease.h refreshed to $want"
+fi
+
+# External modules embed the vermagic of the kernel release they were built
+# against, and every commit changes $(git describe) -> UTS_RELEASE.  kbuild
+# considers an unchanged .o up to date and never re-runs modpost, so a .ko
+# cached at the repo root keeps the OLD release and the running kernel then
+# refuses it: init_module() -> -ENOEXEC -> "Exec format error" in the init
+# log, and with scp.ko gone the SCP never comes up so the modem stalls at HS1.
+# Compare the cached .ko against the release we just built and drop its
+# modpost inputs so kbuild relinks with the current string.
+want="$want SMP preempt mod_unload aarch64"
+relink_if_stale() {
+	local mdir=$1 mko=$2 ko
+	ko=$(find "$mdir" -name "$mko" -print -quit 2>/dev/null || true)
+	[ -n "$ko" ] || return 0
+	if grep -q -a -F "$want" "$ko"; then
+		return 0
+	fi
+	echo "  stale $mko (vermagic != $want) -> relinking"
+	find "$mdir" \( -name '*.mod.c' -o -name '*.mod.o' \
+		-o -name "$mko" -o -name 'modules.order' \) -exec rm -f {} +
+}
+
 # scripts/Makefile.modfinal's "%.ko" pattern rule lists
 # $(objtree)/scripts/module.lds as a prerequisite.  Under O=out that file only
 # appears via 'make modules_prepare' (Makefile: `modules_prepare: prepare`),
@@ -222,6 +265,7 @@ for spec in \
 	"drivers/misc/mediatek/conn_scp:connscp.ko" \
 	"drivers/clk/mediatek/mt6991:clk-mt6991-drv.ko"; do
 	mdir=${spec%%:*}; mko=${spec##*:}
+	relink_if_stale "$mdir" "$mko"
 	ARCH=arm64 make O="$OUT" -j"$JOBS" KBUILD_MODPOST_WARN=1 \
 		M="$mdir" modules 2>&1 | tail -3
 	# With O=out the external-module .ko still lands in-tree under $mdir.
@@ -248,6 +292,7 @@ fi
 ARCH=arm64 make O="$OUT" -j"$JOBS" KBUILD_MODPOST_WARN=1 CONFIG_MTK_GPS_SUPPORT=y \
 	M=drivers/misc/mediatek/connectivity/gps/data_link/plat/v062 modules 2>&1 | tail -3
 mdir=drivers/misc/mediatek/connectivity/gps/data_link/plat/v062
+relink_if_stale "$mdir" gps_drv_dl_v062.ko
 ko=$(find "$OUT/$mdir" "$mdir" -name 'gps_drv_dl_v062.ko' -print -quit 2>/dev/null || true)
 if [ -n "$ko" ]; then
 	cp "$ko" "$K/gps_drv_dl_v062.ko"
