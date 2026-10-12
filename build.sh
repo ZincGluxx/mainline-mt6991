@@ -58,10 +58,12 @@ dir /lib 0755 0 0
 dir /lib/firmware 0755 0 0
 dir /lib/firmware/tp 0755 0 0
 dir /lib/firmware/tp/24618 0755 0 0
+# synaptics-tcm-spi.c has exactly one request_firmware(), for this file
+# (it parses the panel id/max coordinates; flash_firmware defaults to off,
+#  so it is never written back).  The _FAE / LIMIT / LIMIT_AGING siblings in
+# the vendor 24618/ directory belong to the Android touch HAL and are never
+# requested -- do not ship them again.
 file /lib/firmware/tp/24618/FW_S3910_TIANMA_HBP.img $IRFS/firmware/tp/24618/FW_S3910_TIANMA_HBP.img 0644 0 0
-file /lib/firmware/tp/24618/FW_S3910_TIANMA_HBP_FAE.img $IRFS/firmware/tp/24618/FW_S3910_TIANMA_HBP_FAE.img 0644 0 0
-file /lib/firmware/tp/24618/LIMIT_S3910_TIANMA_HBP.img $IRFS/firmware/tp/24618/LIMIT_S3910_TIANMA_HBP.img 0644 0 0
-file /lib/firmware/tp/24618/LIMIT_S3910_TIANMA_HBP_AGING.img $IRFS/firmware/tp/24618/LIMIT_S3910_TIANMA_HBP_AGING.img 0644 0 0
 dir /lib/firmware/arm 0755 0 0
 dir /lib/firmware/arm/mali 0755 0 0
 dir /lib/firmware/arm/mali/arch13.8 0755 0 0
