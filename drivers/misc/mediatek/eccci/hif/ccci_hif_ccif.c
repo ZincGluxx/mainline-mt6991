@@ -172,40 +172,41 @@ static void md_ccif_reg_dump(unsigned char *title, unsigned char hif_id)
 		return;
 
 	CCCI_MEM_LOG_TAG(0, TAG, "%s: %s\n", __func__, title);
-	CCCI_MEM_LOG_TAG(0, TAG, "AP_CON(%p)=0x%x\n",
+	CCCI_NORMAL_LOG(0, TAG, "ccif_reg_dump: %s\n", title);
+	CCCI_NORMAL_LOG(0, TAG, "AP_CON(%p)=0x%x\n",
 			ccif_ctrl->ccif_ap_base + APCCIF_CON,
 			ccif_read32(ccif_ctrl->ccif_ap_base, APCCIF_CON));
-	CCCI_MEM_LOG_TAG(0, TAG, "AP_BUSY(%p)=0x%x\n",
+	CCCI_NORMAL_LOG(0, TAG, "AP_BUSY(%p)=0x%x\n",
 			ccif_ctrl->ccif_ap_base + APCCIF_BUSY,
 			ccif_read32(ccif_ctrl->ccif_ap_base, APCCIF_BUSY));
-	CCCI_MEM_LOG_TAG(0, TAG, "AP_START(%p)=0x%x\n",
+	CCCI_NORMAL_LOG(0, TAG, "AP_START(%p)=0x%x\n",
 			ccif_ctrl->ccif_ap_base + APCCIF_START,
 			ccif_read32(ccif_ctrl->ccif_ap_base, APCCIF_START));
-	CCCI_MEM_LOG_TAG(0, TAG, "AP_TCHNUM(%p)=0x%x\n",
+	CCCI_NORMAL_LOG(0, TAG, "AP_TCHNUM(%p)=0x%x\n",
 			ccif_ctrl->ccif_ap_base + APCCIF_TCHNUM,
 			ccif_read32(ccif_ctrl->ccif_ap_base, APCCIF_TCHNUM));
-	CCCI_MEM_LOG_TAG(0, TAG, "AP_RCHNUM(%p)=0x%x\n",
+	CCCI_NORMAL_LOG(0, TAG, "AP_RCHNUM(%p)=0x%x\n",
 			ccif_ctrl->ccif_ap_base + APCCIF_RCHNUM,
 			ccif_read32(ccif_ctrl->ccif_ap_base, APCCIF_RCHNUM));
-	CCCI_MEM_LOG_TAG(0, TAG, "AP_ACK(%p)=0x%x\n",
+	CCCI_NORMAL_LOG(0, TAG, "AP_ACK(%p)=0x%x\n",
 			ccif_ctrl->ccif_ap_base + APCCIF_ACK,
 			ccif_read32(ccif_ctrl->ccif_ap_base, APCCIF_ACK));
-	CCCI_MEM_LOG_TAG(0, TAG, "MD_CON(%p)=0x%x\n",
+	CCCI_NORMAL_LOG(0, TAG, "MD_CON(%p)=0x%x\n",
 			ccif_ctrl->ccif_md_base + APCCIF_CON,
 			ccif_read32(ccif_ctrl->ccif_md_base, APCCIF_CON));
-	CCCI_MEM_LOG_TAG(0, TAG, "MD_BUSY(%p)=0x%x\n",
+	CCCI_NORMAL_LOG(0, TAG, "MD_BUSY(%p)=0x%x\n",
 			ccif_ctrl->ccif_md_base + APCCIF_BUSY,
 			ccif_read32(ccif_ctrl->ccif_md_base, APCCIF_BUSY));
-	CCCI_MEM_LOG_TAG(0, TAG, "MD_START(%p)=0x%x\n",
+	CCCI_NORMAL_LOG(0, TAG, "MD_START(%p)=0x%x\n",
 			ccif_ctrl->ccif_md_base + APCCIF_START,
 			ccif_read32(ccif_ctrl->ccif_md_base, APCCIF_START));
-	CCCI_MEM_LOG_TAG(0, TAG, "MD_TCHNUM(%p)=0x%x\n",
+	CCCI_NORMAL_LOG(0, TAG, "MD_TCHNUM(%p)=0x%x\n",
 			ccif_ctrl->ccif_md_base + APCCIF_TCHNUM,
 			ccif_read32(ccif_ctrl->ccif_md_base, APCCIF_TCHNUM));
-	CCCI_MEM_LOG_TAG(0, TAG, "MD_RCHNUM(%p)=0x%x\n",
+	CCCI_NORMAL_LOG(0, TAG, "MD_RCHNUM(%p)=0x%x\n",
 			ccif_ctrl->ccif_md_base + APCCIF_RCHNUM,
 			ccif_read32(ccif_ctrl->ccif_md_base, APCCIF_RCHNUM));
-	CCCI_MEM_LOG_TAG(0, TAG, "MD_ACK(%p)=0x%x\n",
+	CCCI_NORMAL_LOG(0, TAG, "MD_ACK(%p)=0x%x\n",
 			ccif_ctrl->ccif_md_base + APCCIF_ACK,
 			ccif_read32(ccif_ctrl->ccif_md_base, APCCIF_ACK));
 
@@ -222,6 +223,33 @@ static void md_ccif_reg_dump(unsigned char *title, unsigned char hif_id)
 			ccif_read32(ccif_ctrl->ccif_ap_base + APCCIF_CHDATA,
 						(idx + 3) * sizeof(u32)));
 	}
+}
+
+void ccci_hif_ccif_watch(void)
+{
+	static u32 last_con, last_busy, last_start, last_ap_rch, last_md_rch;
+	struct md_ccif_ctrl *ccif_ctrl = ccci_ccif_ctrl;
+	u32 ap_con, ap_busy, ap_start, ap_rch, md_rch;
+
+	if (!ccif_ctrl)
+		return;
+	ap_con = ccif_read32(ccif_ctrl->ccif_ap_base, APCCIF_CON);
+	ap_busy = ccif_read32(ccif_ctrl->ccif_ap_base, APCCIF_BUSY);
+	ap_start = ccif_read32(ccif_ctrl->ccif_ap_base, APCCIF_START);
+	ap_rch = ccif_read32(ccif_ctrl->ccif_ap_base, APCCIF_RCHNUM);
+	md_rch = ccif_read32(ccif_ctrl->ccif_md_base, APCCIF_RCHNUM);
+	if (ap_con == last_con && ap_busy == last_busy &&
+	    ap_start == last_start && ap_rch == last_ap_rch &&
+	    md_rch == last_md_rch)
+		return;
+	last_con = ap_con;
+	last_busy = ap_busy;
+	last_start = ap_start;
+	last_ap_rch = ap_rch;
+	last_md_rch = md_rch;
+	CCCI_NORMAL_LOG(0, TAG,
+		"ccif watch ap_con=0x%x ap_busy=0x%x ap_start=0x%x ap_rch=0x%x md_rch=0x%x\n",
+		ap_con, ap_busy, ap_start, ap_rch, md_rch);
 }
 
 static void md_ccif_queue_dump(unsigned char hif_id)
@@ -469,16 +497,8 @@ static inline void ccci_md_check_rx_seq_num(
 			"channel %d seq number out-of-order %d->%d (data: %X, %X)\n",
 			channel, seq_num, traffic_info->seq_nums[IN][channel],
 			ccci_h->data[0], ccci_h->data[1]);
-		md_ccif_op_dump_status(CCIF_HIF_ID, DUMP_FLAG_CCIF, NULL, qno);
-		param[0] = channel;
-		param[1] = traffic_info->seq_nums[IN][channel];
-		param[2] = seq_num;
-		ccci_md_force_assert(MD_FORCE_ASSERT_BY_MD_SEQ_ERROR,
-			(char *)param, sizeof(param));
-
-	} else {
-		traffic_info->seq_nums[IN][channel] = seq_num;
 	}
+	traffic_info->seq_nums[IN][channel] = seq_num;
 }
 
 //atomic_t lb_dl_q;

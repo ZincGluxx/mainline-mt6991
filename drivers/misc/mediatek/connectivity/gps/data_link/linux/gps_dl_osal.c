@@ -5,13 +5,21 @@
 
 #include "gps_dl_config.h"
 
+#include <linux/string.h>
+#include <linux/timer.h>
+
 #include "gps_dl_osal.h"
 #include "gps_dl_log.h"
 
 
 char *gps_dl_osal_strncpy(char *dst, const char *src, unsigned int len)
 {
-	return strncpy(dst, src, len);
+	size_t n = strnlen(src, len);
+
+	memcpy(dst, src, n);
+	if (n < len)
+		memset(dst + n, 0, len - n);
+	return dst;
 }
 
 char *gps_dl_osal_strsep(char **str, const char *c)
@@ -345,7 +353,7 @@ int gps_dl_osal_timer_stop(struct gps_dl_osal_timer *pTimer)
 {
 	struct timer_list *timer = &pTimer->timer;
 
-	del_timer(timer);
+	timer_delete(timer);
 	return 0;
 }
 
@@ -353,7 +361,7 @@ int gps_dl_osal_timer_stop_sync(struct gps_dl_osal_timer *pTimer)
 {
 	struct timer_list *timer = &pTimer->timer;
 
-	del_timer_sync(timer);
+	timer_delete_sync(timer);
 	return 0;
 }
 

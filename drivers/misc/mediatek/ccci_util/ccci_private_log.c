@@ -897,8 +897,8 @@ int get_dump_buf_usage(char buf[], int size)
 
 void ccci_util_mem_dump(int buf_type, void *start_addr, int len)
 {
-	unsigned int *curr_p = (unsigned int *)start_addr;
-	unsigned char *curr_ch_p = NULL;
+	volatile unsigned int *curr_p = (volatile unsigned int *)start_addr;
+	volatile unsigned char *curr_ch_p = NULL;
 	int _16_fix_num = len / 16;
 	int tail_num = len % 16;
 	char buf[16];

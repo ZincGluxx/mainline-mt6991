@@ -45,9 +45,11 @@ static int md_dump_mem_once(const void *buff_src, unsigned long dump_len)
 			tmp_idx++;
 		}
 
-		if (tmp_idx < dump_limit)
+		if (tmp_idx < dump_limit) {
+			pr_debug("[ccci-md-dump] %s", (temp_buf + tmp_idx));
 			ret = ccci_dump_write(CCCI_DUMP_MEM_DUMP, 0, "%s",
 				(temp_buf + tmp_idx));
+		}
 		else {
 			CCCI_ERROR_LOG(0, TAG,
 				"%s: dump_limit:0x%lx, i:0x%lx, temp_buf[0->%d] are all 0\n",

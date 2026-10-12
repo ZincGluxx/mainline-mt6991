@@ -46,6 +46,36 @@
 		interrupts = <245 IRQ_TYPE_EDGE_FALLING>;
 	};
 
+	gps: gps@40c00000 {
+		compatible = "mediatek,mt6991-gps";
+		reg = <0 0x40c00000 0 0x100000>,
+			<0 0x40000000 0 0x100000>,
+			<0 0x40d00000 0 0x100000>,
+			<0 0x1c000000 0 0x4>,
+			<0 0x1c01d058 0 0x4>,
+			<0 0x1c01d060 0 0x4>,
+			<0 0x1c01d0f8 0 0x28>;
+		reg-names = "conn_infra_base", "conn_gps_base", "conn_dyn_base",
+			"status_dummy_cr", "tia2_gps_on", "tia2_gps_rc_sel",
+			"tia2_gps_debug";
+		interrupts = <GIC_SPI 619 IRQ_TYPE_LEVEL_HIGH 0>,
+			<GIC_SPI 620 IRQ_TYPE_LEVEL_HIGH 0>,
+			<GIC_SPI 621 IRQ_TYPE_LEVEL_HIGH 0>,
+			<GIC_SPI 622 IRQ_TYPE_LEVEL_HIGH 0>,
+			<GIC_SPI 623 IRQ_TYPE_LEVEL_HIGH 0>,
+			<GIC_SPI 624 IRQ_TYPE_LEVEL_HIGH 0>,
+			<GIC_SPI 625 IRQ_TYPE_LEVEL_HIGH 0>,
+			<GIC_SPI 627 IRQ_TYPE_LEVEL_HIGH 0>,
+			<GIC_SPI 626 IRQ_TYPE_LEVEL_HIGH 0>,
+			<GIC_SPI 132 IRQ_TYPE_EDGE_RISING 0>;
+		emi-connac-ver = <2>;
+		emi-addr = <0 0xee0f0000>;
+		emi-size = <0x100000>;
+		emi-alignment = <0x100000>;
+		emi-max-addr = <0xc0000000>;
+		b13b14-status-addr = <0x1c000008>;
+	};
+
 	wifi: wifi@40000000 {
 		compatible = "mediatek,wifi";
 		memory-region = <&wifi_dma_pool>;

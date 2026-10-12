@@ -69,6 +69,7 @@ ccflags-y += -I$(srctree)/drivers/misc/mediatek/conn_md/include/
 
 ccci_md_all-$(CCCI_OBJ) += port/port_cfg.o \
 		port/port_char.o \
+		port/port_tty.o \
 		port/port_ctlmsg.o \
 		port/port_udc.o \
 		port/port_ipc.o \

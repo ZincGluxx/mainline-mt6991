@@ -55,11 +55,19 @@ int consys_conninfra_on_power_ctrl_mt6991(unsigned int enable)
 	int ret = 0;
 
 #ifndef CONFIG_FPGA_EARLY_PORTING
-#if MTK_CONNINFRA_CLOCK_BUFFER_API_AVAILABLE
+	/*
+	 * MT6991 mainline has no CONN power domain (scpsys) and no clkbuf PMIC
+	 * control, so the "clock buffer API" branch (pm_runtime only) leaves the
+	 * CONN MTCMOS/clock gated and the first CONNSYS register access stalls
+	 * the AXI bus (WDT). Do the explicit SPM/MTCMOS gen sequence as well.
+	 */
+	pr_notice("[c2dbg] on_power_ctrl via CLKBUF/SPM api + gen, enable=%d\n", enable);
 	ret = consys_platform_spm_conn_ctrl_mt6991(enable);
-#else
-	ret = consys_conninfra_on_power_ctrl_mt6991_gen(1, 0, enable);
-#endif
+	pr_notice("[c2dbg] spm_conn_ctrl ret=%d\n", ret);
+	if (enable) {
+		ret = consys_conninfra_on_power_ctrl_mt6991_gen(1, 0, enable);
+		pr_notice("[c2dbg] gen power ctrl ret=%d\n", ret);
+	}
 #endif
 	if (enable)
 		mdelay(5);

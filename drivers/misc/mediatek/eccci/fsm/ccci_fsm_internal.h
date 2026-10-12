@@ -147,7 +147,10 @@ enum ccci_ipi_op_id {
 #define FSM_CMD_FLAG_FLIGHT_MODE (1 << 1)
 
 #define EVENT_POLL_INTEVAL 20 /* ms */
-#define BOOT_TIMEOUT (30*1000)
+/* The fs_ongoing-based extension in fsm_routine_boot() is dead code (nothing
+ * ever sends CCCI_EVENT_FS_IN), and the FS phase of boot alone takes >27 s.
+ */
+#define BOOT_TIMEOUT (120*1000)
 #define MD_EX_CCIF_TIMEOUT 10000
 #define MD_EX_REC_OK_TIMEOUT 10000
 #define MD_EX_PASS_TIMEOUT 10000

@@ -15,6 +15,7 @@
 #include <linux/kthread.h>
 #include <linux/delay.h>
 #include <linux/interrupt.h>
+#include <linux/smp.h>
 #include <linux/timer.h>
 #include <linux/fs.h>
 #include <linux/netdevice.h>
@@ -109,19 +110,28 @@ void wdt_disable_irq(struct ccci_modem *md)
 	}
 }
 
+static atomic_t wdt_observe_count = ATOMIC_INIT(0);
+
 static irqreturn_t md_cd_wdt_isr(int irq, void *data)
 {
 	struct ccci_modem *md = (struct ccci_modem *)data;
+	int observe_count = atomic_inc_return(&wdt_observe_count);
 
 	md_wdt_rec.time[0] = local_clock();
 	md_wdt_rec.isr_cnt++;
 	md_wdt_rec.reset_flg = 0;
 
+	if (observe_count <= 4)
+		pr_info("CCCI-OBS: MD_WDT entry n=%d irq=%d cpu=%u\n",
+			observe_count, irq, raw_smp_processor_id());
 	//CCCI_ERROR_LOG(0, TAG, "MD WDT IRQ\n");
 	//ccci_event_log("md: MD WDT IRQ\n");
 	ccci_hif_md_exception((1<<CCIF_HIF_ID), HIF_EX_STOP_EE_NOTIFY);
 	wdt_disable_irq(md);
 	ccci_fsm_recv_md_interrupt(MD_IRQ_WDT);
+	if (observe_count <= 4)
+		pr_info("CCCI-OBS: MD_WDT exit n=%d irq=%d cpu=%u\n",
+			observe_count, irq, raw_smp_processor_id());
 
 	return IRQ_HANDLED;
 }
@@ -661,7 +671,7 @@ static int md_cd_dump_info(struct ccci_modem *md,
 {
 	if (flag & DUMP_FLAG_CCIF_REG) {
 		CCCI_MEM_LOG_TAG(0, TAG, "Dump CCIF REG\n");
-		ccci_hif_dump_status(CCIF_HIF_ID, DUMP_FLAG_CCIF_REG,
+		ccci_hif_dump_status(1 << CCIF_HIF_ID, DUMP_FLAG_CCIF_REG,
 			NULL, -1);
 	}
 	if (flag & DUMP_FLAG_PCCIF_REG) {

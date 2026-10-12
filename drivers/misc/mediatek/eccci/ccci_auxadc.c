@@ -52,12 +52,14 @@ static int ccci_get_adc_info(struct device *dev)
 		}
 		CCCI_ERROR_LOG(-1, TAG, "fail to get iio channel (%d)", ret);
 		/*
-		 * No MT6363 auxadc provider on this port; report the phone
-		 * board type (>=100mV) so the modem does not treat the device
-		 * as an EVB (see ccci_fsm.c BOOT_INFO bit 1).
+		 * No MT6363 auxadc provider on this port.  Match the stock
+		 * Android behaviour: its PMIC auxadc reads ~1mV here, so the
+		 * AP reports BOOT_INFO boot_attributes bit1 = 0 (EVB), not
+		 * Phone.  Report <100mV (EVB) to stay bit-identical with the
+		 * working stock AP.
 		 */
-		adc_val = 100;
-		adc_mV = 100;
+		adc_val = 1;
+		adc_mV = 1;
 		return 0;
 	}
 	adc_num = md_channel->channel->channel;

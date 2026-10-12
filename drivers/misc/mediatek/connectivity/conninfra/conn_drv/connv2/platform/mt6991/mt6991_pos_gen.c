@@ -554,6 +554,8 @@ int consys_polling_chipid_mt6991_gen(unsigned int *pconsys_ver_id)
 		return -1;
 	}
 
+	pr_notice("[c2dbg] chipid poll enter CONN_CFG_BASE=0x%lx\n",
+		(unsigned long)CONN_CFG_BASE);
 	/* check CONN_INFRA IP Version */
 	/* (polling "10 times" for specific project code and each polling interval is "1ms") */
 	retry = 11;
@@ -561,6 +563,7 @@ int consys_polling_chipid_mt6991_gen(unsigned int *pconsys_ver_id)
 		consys_ver_id = CONSYS_REG_READ(
 			CONN_CFG_BASE +
 			CONSYS_GEN_IP_VERSION_OFFSET_ADDR);
+		pr_notice("[c2dbg] chipid read=0x%08x\n", consys_ver_id);
 		if (consys_ver_id == CONSYS_GEN_CONN_HW_VER) {
 			check = 0;
 			pr_info("Consys HW version id(0x%08x), retry(%d)\n", consys_ver_id, retry);

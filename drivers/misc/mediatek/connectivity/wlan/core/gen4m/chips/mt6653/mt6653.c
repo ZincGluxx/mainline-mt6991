@@ -1218,7 +1218,11 @@ struct mt66xx_chip_info mt66xx_chip_info_mt6653 = {
 #endif /* CFG_SUPPORT_HOST_OFFLOAD == 1 */
 	.is_en_wfdma_no_mmio_read = FALSE,
 #if CFG_MTK_WIFI_SW_EMI_RING
-	.is_en_sw_emi_read = TRUE,
+	/* CB DMA never mirrors MSI to EMI on this platform (rsrv mem not
+	 * reserved by kernel), every halMbuRead times out after 10ms and
+	 * falls back to MMIO anyway; disable the path entirely.
+	 */
+	.is_en_sw_emi_read = FALSE,
 #endif
 	.fgDumpViaBtOnlyForDbgSOP = TRUE,
 #endif /* _HIF_PCIE */

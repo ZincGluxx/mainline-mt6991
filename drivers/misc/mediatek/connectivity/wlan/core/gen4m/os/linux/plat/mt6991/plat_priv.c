@@ -1006,11 +1006,11 @@ void kalDumpPlatGPIOStat(void)
 		gpio_get_value(512 + 249));
 }
 
-#ifdef CONFIG_WLAN_MTK_EMI
 void kalSetEmiMpuProtection(phys_addr_t emiPhyBase, bool enable)
 {
 }
 
+#ifdef CONFIG_WLAN_MTK_EMI
 void kalSetDrvEmiMpuProtection(phys_addr_t emiPhyBase, uint32_t offset,
 			       uint32_t size)
 {

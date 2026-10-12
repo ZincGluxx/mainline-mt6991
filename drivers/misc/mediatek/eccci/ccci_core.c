@@ -38,7 +38,7 @@ static void *dev_class;
  * other value to desiable all log
  */
 #ifndef CCCI_LOG_LEVEL /* for platform override */
-#define CCCI_LOG_LEVEL CCCI_LOG_ALL_UART
+#define CCCI_LOG_LEVEL CCCI_LOG_CRITICAL_UART
 #endif
 
 //#define CCCI_LOG_LEVEL CCCI_LOG_ALL_UART

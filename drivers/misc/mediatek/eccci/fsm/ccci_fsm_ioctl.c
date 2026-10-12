@@ -577,9 +577,15 @@ long ccci_fsm_ioctl(unsigned int cmd, unsigned long arg)
 					current->comm);
 		break;
 	case CCCI_IOC_DO_START_MD:
-		/* add check whether the user call md start ioctl is valid */
+		/*
+		 * add check whether the user call md start ioctl is valid.
+		 * On this port the vendor ccci_mdinit is launched through the
+		 * Android linker64 (gps-env chroot), so its comm is "linker64".
+		 */
 		if (strncmp(current->comm,
-			VALID_USER, strlen(VALID_USER)) == 0) {
+			VALID_USER, strlen(VALID_USER)) == 0 ||
+		    strncmp(current->comm, "linker64",
+			strlen("linker64")) == 0) {
 			CCCI_NORMAL_LOG(0, FSM,
 				"MD start ioctl called by %s\n", current->comm);
 			ret = fsm_append_command(ctl, CCCI_COMMAND_START, 0);

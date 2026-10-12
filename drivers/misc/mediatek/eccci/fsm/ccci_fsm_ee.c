@@ -99,6 +99,8 @@ void fsm_md_exception_stage(struct ccci_fsm_ee *ee_ctl, int stage)
 		struct ccci_modem *md = ccci_get_modem();
 
 		CCCI_ERROR_LOG(0, FSM, "MD exception stage 1!\n");
+		pr_notice("[mdee] stage1 flag=0x%x case-pending\n",
+			ee_ctl->ee_info_flag);
 #if IS_ENABLED(CONFIG_MTK_AEE_FEATURE)
 		tracing_off();
 #endif
@@ -414,6 +416,7 @@ void fsm_md_normal_ee_handler(struct ccci_fsm_ctl *ctl)
 	unsigned long flags;
 
 	s_is_normal_mdee = 1;
+	pr_notice("[mdee] normal_ee_handler enter\n");
 	/* no need to implement another
 	 * event polling in EE_CTRL,
 	 * so we do it here

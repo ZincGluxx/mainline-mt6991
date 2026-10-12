@@ -316,6 +316,7 @@ int consys_hw_pwr_on(unsigned int curr_status, unsigned int on_radio)
 			return CONNINFRA_POWER_ON_D_DIE_FAIL;
 		}
 		conn_hw_env.clock_type = ret;
+		pr_notice("[c2dbg] clock_type=%d\n", ret);
 		/* Interface of send global variable to ATF */
 		if (consys_hw_ops->consys_plt_init_atf_data)
 			consys_hw_ops->consys_plt_init_atf_data();
@@ -324,7 +325,9 @@ int consys_hw_pwr_on(unsigned int curr_status, unsigned int on_radio)
 		 * Set PMIC to turn on the power that AFE WBG circuit in D-die,
 		 * OSC or crystal component, and A-die need.
 		 */
+		pr_notice("[c2dbg] step: pmic_common_power_ctrl\n");
 		ret = pmic_mng_common_power_ctrl(1, curr_status, next_status);
+		pr_notice("[c2dbg] pmic_common_power_ctrl ret=%d\n", ret);
 		if (consys_hw_ops->consys_plt_clock_buffer_ctrl)
 			consys_hw_ops->consys_plt_clock_buffer_ctrl(1);
 		if (ret) {
@@ -344,6 +347,7 @@ int consys_hw_pwr_on(unsigned int curr_status, unsigned int on_radio)
 
 		if (consys_hw_ops->consys_plt_conninfra_on_power_ctrl)
 			ret = consys_hw_ops->consys_plt_conninfra_on_power_ctrl(1);
+		pr_notice("[c2dbg] conninfra_on_power_ctrl ret=%d\n", ret);
 		if (ret) {
 			pr_err("[%s] Conninfra HW power on fail, ret=%d\n", __func__, ret);
 			_consys_hw_pwr_on_rollback(CONNINFRA_PWR_ON_CONNINFRA_HW_POWER_FAIL,
@@ -353,6 +357,7 @@ int consys_hw_pwr_on(unsigned int curr_status, unsigned int on_radio)
 
 		if (consys_hw_ops->consys_plt_polling_consys_chipid)
 			ret = consys_hw_ops->consys_plt_polling_consys_chipid();
+		pr_notice("[c2dbg] polling_chipid ret=%d\n", ret);
 		if (ret) {
 			pr_err("[%s] polling d-die id fail, ret=%d\n", __func__, ret);
 			_consys_hw_pwr_on_rollback(CONNINFRA_PWR_ON_POLLING_CHIP_ID_FAIL,
@@ -369,33 +374,46 @@ int consys_hw_pwr_on(unsigned int curr_status, unsigned int on_radio)
 		 * 6. patch default value
 		 * 7. CONN_INFRA low power setting (srcclken wait time, mtcmos HW ctl...)
 		 */
+		pr_notice("[c2dbg] step: emi_set_remapping_reg\n");
 		emi_mng_set_remapping_reg();
+		pr_notice("[c2dbg] step: d_die_cfg\n");
 		if (consys_hw_ops->consys_plt_d_die_cfg)
 			consys_hw_ops->consys_plt_d_die_cfg();
+		pr_notice("[c2dbg] step: spi_master_cfg\n");
 		if (consys_hw_ops->consys_plt_spi_master_cfg)
 			consys_hw_ops->consys_plt_spi_master_cfg(curr_status, next_status);
+		pr_notice("[c2dbg] step: a_die_cfg\n");
 		if (consys_hw_ops->consys_plt_a_die_cfg)
 			ret = consys_hw_ops->consys_plt_a_die_cfg(curr_status, next_status);
+		pr_notice("[c2dbg] a_die_cfg ret=%d\n", ret);
 		if (ret) {
 			pr_err("[%s] a-die config error, ret=%d\n", __func__, ret);
 			_consys_hw_pwr_on_rollback(CONNINFRA_PWR_ON_A_DIE_FAIL,
 									curr_status, next_status);
 			return CONNINFRA_POWER_ON_A_DIE_FAIL;
 		}
+		pr_notice("[c2dbg] step: afe_sw_patch\n");
 		if (consys_hw_ops->consys_plt_afe_sw_patch)
 			consys_hw_ops->consys_plt_afe_sw_patch();
+		pr_notice("[c2dbg] step: afe_wbg_cal\n");
 		if (consys_hw_ops->consys_plt_afe_wbg_cal)
 			consys_hw_ops->consys_plt_afe_wbg_cal();
+		pr_notice("[c2dbg] step: subsys_pll_initial\n");
 		if (consys_hw_ops->consys_plt_subsys_pll_initial)
 			consys_hw_ops->consys_plt_subsys_pll_initial();
 		/* Record SW status on shared sysram */
+		pr_notice("[c2dbg] step: subsys_status_update\n");
 		if (consys_hw_ops->consys_plt_subsys_status_update)
 			consys_hw_ops->consys_plt_subsys_status_update(true, on_radio);
+		pr_notice("[c2dbg] step: raise_voltage\n");
 		_consys_hw_raise_voltage(on_radio, true, true);
+		pr_notice("[c2dbg] step: low_power_setting\n");
 		if (consys_hw_ops->consys_plt_low_power_setting)
 			consys_hw_ops->consys_plt_low_power_setting(curr_status, next_status);
 		/* Enable low power mode */
+		pr_notice("[c2dbg] step: pmic_low_power_mode\n");
 		pmic_mng_common_power_low_power_mode(1, curr_status, next_status);
+		pr_notice("[c2dbg] pwr_on sequence done\n");
 	} else {
 		ret = pmic_mng_common_power_ctrl(1, curr_status, next_status);
 		if (ret) {

@@ -45,6 +45,7 @@ int ccci_hif_ask_more_request(unsigned char hif_id, int rx_qno);
 void ccci_hif_start_queue(unsigned int reserved, enum DIRECTION dir);
 int ccci_hif_dump_status(unsigned int hif_flag, enum MODEM_DUMP_FLAG dump_flag,
 	void *buff, int length);
+void ccci_hif_ccif_watch(void);
 int ccci_hif_debug(unsigned char hif_id, enum ccci_hif_debug_flg debug_id,
 		int *paras, int len);
 void *ccci_hif_fill_rt_header(unsigned char hif_id, int packet_size,

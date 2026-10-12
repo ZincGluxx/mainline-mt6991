@@ -718,7 +718,20 @@ static void md_ee_set_fatal_para(struct ex_fatal_v6 *fatal_src,
 	char temp_str[32] = { 0 };
 	char *fatal_fname_prefix = "MD Offending File:";
 	unsigned int string_len = 0;
+	unsigned int i;
+	char fn[64] = { 0 };
 	int ret = 0;
+
+	if (fatal_src->is_filename_supported == 0x01) {
+		for (i = 0; i < sizeof(fn) - 1 && fatal_src->filename[i]; i++)
+			fn[i] = fatal_src->filename[i];
+	}
+	CCCI_ERROR_LOG(0, FSM,
+		"fatal raw: st=0x%08X sp=0x%08X pc=0x%08X lr=0x%08X addr=0x%08X cause=0x%08X cadefa=%u fn=%s\n",
+		fatal_src->error_status, fatal_src->error_sp,
+		fatal_src->error_pc, fatal_src->error_lr,
+		fatal_src->error_address, fatal_src->error_cause,
+		fatal_src->is_cadefa_supported, fn);
 
 	/* 1. offender string */
 	if ((fatal_src->offender[0] != 0xCC)
@@ -826,6 +839,10 @@ static void mdee_info_prepare_v6(struct ccci_fsm_ee *mdee)
 	debug_info->type = brief_info->maincontent_type;
 	debug_info->ex_type = brief_info->ex_type;
 	md_ee_set_exp_type(brief_info, core_id, &debug_info->name);
+	CCCI_ERROR_LOG(0, FSM,
+		"ex_brief: name=%s content=0x%x ex_type=0x%x elm=0x%x ver=0x%08x\n",
+		debug_info->name, debug_info->type, debug_info->ex_type,
+		brief_info->elm_status, ex_overview->overview_verno);
 	/* ======== exception parameters ========= */
 	switch (debug_info->type) {
 	case MD_EX_CLASS_ASSET:

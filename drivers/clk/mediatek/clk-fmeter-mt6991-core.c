@@ -78,12 +78,12 @@ unsigned int mt6991_get_fmeter_freq(unsigned int id, enum  FMETER_TYPE type)
 	unsigned int r;
 
 	if (fm_ops == NULL || fm_ops->get_fmeter_freq == NULL) {
-		pr_notice("[fmeter-dbg] no ops (id=%u type=%u)\n", id, type);
+		pr_debug("[fmeter-dbg] no ops (id=%u type=%u)\n", id, type);
 		return 0;
 	}
 
 	r = fm_ops->get_fmeter_freq(id, type);
-	pr_notice("[fmeter-dbg] id=%u type=%u -> %u\n", id, type, r);
+	pr_debug("[fmeter-dbg] id=%u type=%u -> %u\n", id, type, r);
 	return r;
 }
 EXPORT_SYMBOL(mt6991_get_fmeter_freq);

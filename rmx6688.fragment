@@ -93,6 +93,7 @@ CONFIG_COMMON_CLK_MT8196=y
 CONFIG_COMMON_CLK_MT8196_IMP_IIC_WRAP=y
 CONFIG_I2C_MT65XX=y
 CONFIG_PHY_MTK_NXP_EUSB2_REPEATER=y
+CONFIG_PHY_MTK_MT6379_EUSB2_REPEATER=y
 
 # --- Android /data probe (f2fs) ------------------------------------------
 # init mounts userdata (GPT partition 95 = /dev/block/by-name/userdata) to
@@ -147,7 +148,7 @@ CONFIG_ARM64_EMBEDDED_DTB_SOURCE="arch/arm64/boot/dts/mediatek/mt6991-realme-rmx
 # every gate the bootloader left enabled but no mainline driver claims yet --
 # including, quite possibly, the display pipeline the framebuffer prints
 # through.  With the flag the kernel leaves hardware exactly as handed over.
-CONFIG_CMDLINE="earlycon=uart8250,mmio32,0x16000000 console=ttyS0,115200n8 console=tty0 ignore_loglevel no_console_suspend panic=0 nokaslr clk_ignore_unused pd_ignore_unused eusb2_keep_calib cma=256M swiotlb=65536"
+CONFIG_CMDLINE="earlycon=uart8250,mmio32,0x16000000 console=ttyS0,115200n8 console=tty0 ignore_loglevel no_console_suspend pm_debug_messages panic=0 nokaslr clk_ignore_unused pd_ignore_unused eusb2_keep_calib cma=256M swiotlb=65536 printk.devkmsg=on"
 CONFIG_CMDLINE_FORCE=y
 
 # --- Build hygiene on-device ---------------------------------------------
@@ -195,6 +196,36 @@ CONFIG_MTK_CMDQ=y
 CONFIG_MTK_CMDQ_MBOX=y
 CONFIG_MTK_INFRACFG=y
 CONFIG_MAILBOX=y
+
+# MT6991 SCP/SPM power domains.  Needed so the mddriver can attach to the
+# MD domain (its power-on clears the SLEEP0/1_MD AXI bus protectors the
+# modem needs).  The port's init deliberately leaves the bootloader's MTCMOS
+# state untouched, so the live PCIe/WiFi domains are not reset.
+CONFIG_MTK_SCPSYS_MT6991=y
+
+# --- SCP (RV33) tinysys framework -----------------------------------------
+# The modem's CCISM core (MD side) syncs with the AP/SCP; without a running
+# SCP the MD's ccismcore times out and asserts.  Ports the vendor scp/rv
+# driver plus its mtk-mbox/mtk-ipi/rpmsg infrastructure.
+#
+# Step 1c: infra + SCP driver, with the vendor SCP's scp_ipi_send symbol
+# renamed to scp_ipi_send_legacy to rule out a link collision with mainline's
+# scp_ipi_send.  Still no scp@1c800000 DTS node (nothing probes).
+CONFIG_RPMSG=y
+CONFIG_MTK_MBOX=y
+CONFIG_RPMSG_MTK_MBOX=y
+CONFIG_MTK_IPI=y
+# Build the SCP as a loadable module so its code is NOT linked into vmlinux
+# (the built-in SCP code hangs the ATF at boot).  Loaded from the initramfs.
+CONFIG_MTK_TINYSYS_SCP_SUPPORT=m
+# The SCP logger makes the SCP wedge (wdt reset loop) on this port, so keep
+# it off.  (Kconfig is tristate and the gate handles _MODULE, so it can be
+# turned on again later.)
+# CONFIG_MTK_TINYSYS_SCP_LOGGER_SUPPORT is not set
+# CONFIG_MTK_TINYSYS_SCP_DEBUG_SUPPORT is not set
+# Connectivity <-> SCP bridge (connscp.ko): SCP READY handling + connsys/SHM
+# setup + SCP-offloaded conn services.  Loaded after scp.ko.
+CONFIG_MTK_CONN_SCP=m
 
 # MT8196/MT6991 display clock gate drivers (mmsys0/mmsys1/ovl/vdisp)
 CONFIG_COMMON_CLK_MT8196_MMSYS=y
@@ -282,16 +313,18 @@ CONFIG_PCIE_MEDIATEK_GEN3=y
 CONFIG_PHY_MTK_PCIE=y
 
 # --- Bluetooth: MT6991 connv3 / MT6653 2g2a (built-in) --------------------
-# Mainline BlueZ path: BT core + HCI UART(serdev/H4) + MTK transport.
-# The vendor bt/linux_v2 (Android/bluedroid) port is disabled; MT6653/MT6991
-# support lives in the mainline btmtk.c/btmtkuart.c.  BT_HCIUART must be =y
-# (tristate dependency) so btmtkuart can be built-in, bound via the uart3
-# serdev child node.
+# Full Android port of bt/linux_v2 (UART tty + connv3 power).  BlueZ needs a
+# kernel HCI device, so the Bluetooth core must be built-in (=y) for the
+# built-in BT driver to link against hci_alloc_dev/hci_register_dev.
 CONFIG_BT=y
 CONFIG_BT_BREDR=y
-# The BT UART is routed through the UARTHUB block (board DTS starts the BT
-# controller with hub-en = 1).
+# The BT UART is routed through the UARTHUB block; the driver is now ported
+# and the board DTS starts the BT controller in hub mode (hub-en = 1).
 CONFIG_MTK_UARTHUB=y
+
+# Mainline MTK BT core + UART(serdev/H4) transport.  MT6653/MT6991 support
+# was added; BT_HCIUART must be =y too (tristate dependency) so btmtkuart can
+# be built-in.  Bound via the uart3 serdev child node.
 CONFIG_BT_HCIUART=y
 CONFIG_BT_MTKUART=y
 
@@ -304,38 +337,44 @@ CONFIG_SPMI_MTK_PMIF=y
 CONFIG_REGMAP_SPMI=y
 CONFIG_CHARGER_MT6379=y
 
-# --- Keys: power / volume (MT6363 SPMI + gpio-keys) -----------------------
+
+# --- Modem / CCCI (M80: CCIF + DPMAIF) ------------------------------------
+# MT6991 gen97 modem stack ported in-tree from the vendor kernel
+# (android_kernel_modules_and_devicetree_oneplus_mt6991).  Built-in so it
+# links into the Image (build.sh only produces Image, not modules).
+CONFIG_MTK_CCCI_DEVICES=y
+CONFIG_MTK_ECCCI_DRIVER=y
+CONFIG_MTK_NET_CCMNI=y
+CONFIG_PAGE_POOL=y
+# RAT capability bitmap for N/Lf/Lt/W/G (see vendor build.prop).
+CONFIG_MTK_MD1_SUPPORT=14
+CONFIG_MTK_NET_RPS=y
+
+# Vendor MT6991 clock tree (cksys / vlp_cksys) for the SCP DVFS.
+CONFIG_CLK_MT6991=m
+
+# --- Buttons: power / volume-up (MT6363 PMIC) + volume-down (GPIO11) -------
+# Power and volume-up are the MT6363 PWRKEY/HOMEKEY lines.  The MT6991 SPMI
+# controller runs without an IRQ domain, so the keys are polled (TOPSTATUS)
+# instead of using the PMIC interrupts.  Volume-down uses the standard
+# gpio-keys driver (KEYBOARD_GPIO is already =y from the defconfig).
 CONFIG_INPUT_MT6363_SPMI_KEYS=y
 
-# --- Suspend debug (s2idle bring-up) --------------------------------------
+# --- System suspend (s2idle) ----------------------------------------------
+# CONFIG_SUSPEND/PM_SLEEP are already =y in defconfig.  s2idle ("freeze") is
+# the only usable state until the MT6991 SPM/SPM-suspend path is ported.
+# PM_DEBUG exposes /sys/power/pm_test to bisect a hanging suspend.
 CONFIG_PM_DEBUG=y
 CONFIG_PM_SLEEP_DEBUG=y
 
-# --- Audio (AFE + tfa98xx speaker amp) ------------------------------------
+# --- Audio: MT6991 AFE -----------------------------------------------------
+# MT6991 shares the MT8196 AFE register layout, so the mainline mt8196 AFE
+# driver (SND_SOC_MT8196) drives it.  Built-in: no modules on the rootfs.
+# CONFIG_SOUND gates CONFIG_SND, so it must be =y too (defconfig ships =m).
 CONFIG_SOUND=y
 CONFIG_SND=y
 CONFIG_SND_SOC=y
 CONFIG_SND_SOC_MEDIATEK=y
 CONFIG_SND_SOC_MT8196=y
-CONFIG_SND_SOC_TFA9874=y
 CONFIG_SND_SOC_MTK_SP_SPK_AMP=y
-
-# --- eUSB2 repeater (MT6379 SPMI) + USB-C data path -----------------------
-CONFIG_PHY_MTK_MT6379_EUSB2_REPEATER=y
-
-# --- Modem / CCCI + SCP (MT6991) ------------------------------------------
-CONFIG_MTK_IPI=y
-CONFIG_MTK_MBOX=y
-CONFIG_RPMSG=y
-CONFIG_RPMSG_MTK_MBOX=y
-CONFIG_MTK_TINYSYS_SCP_SUPPORT=m
-CONFIG_MTK_CONN_SCP=m
-CONFIG_MTK_CCCI_DEVICES=y
-CONFIG_MTK_ECCCI_DRIVER=y
-CONFIG_MTK_NET_CCMNI=y
-CONFIG_MTK_NET_RPS=y
-CONFIG_MTK_MD1_SUPPORT=14
-CONFIG_MTK_SCPSYS_MT6991=y
-CONFIG_CLK_MT6991=m
-CONFIG_PAGE_POOL=y
-CONFIG_CMDLINE="earlycon=uart8250,mmio32,0x16000000 console=ttyS0,115200n8 console=tty0 ignore_loglevel no_console_suspend pm_debug_messages panic=0 nokaslr clk_ignore_unused pd_ignore_unused eusb2_keep_calib cma=256M swiotlb=65536 printk.devkmsg=on"
+CONFIG_SND_SOC_TFA9874=y

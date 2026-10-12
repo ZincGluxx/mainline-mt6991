@@ -18,6 +18,8 @@
 #include <linux/sched/clock.h> /* local_clock() */
 #include <linux/kthread.h>
 #include <linux/gpio.h>
+#include <linux/firmware.h>
+#include <linux/vmalloc.h>
 #include <linux/irq.h>
 #include <linux/of.h>
 #include <linux/of_fdt.h>
@@ -47,6 +49,7 @@ static int ccci_of_get_named_gpio(struct device_node *np,
 #include "ccci_auxadc.h"
 #include "ccci_bm.h"
 #include "ccci_modem.h"
+#include "modem_sys.h"
 #include "port_rpc.h"
 #include "ccmni.h"
 #include "ccci_fsm.h"
@@ -758,6 +761,201 @@ ssize_t port_rpc_ecid_show(char *buf)
 }
 #endif
 
+/*
+ * AMMS/DRDI (IPC_RPC_AMMS_DRDI_CONTROL, 0x4014).
+ *
+ * The vendor AP serves this from userspace (ccci_rpcd): it loads the md1drdi
+ * tag of the modem image and, per request, copies md1drdi[src..src+size] into
+ * the SMEM_USER_MD_DRDI share-memory window (64KB ``bank4'').  mainline has no
+ * ccci_rpcd, so we do the same in-kernel.  The 188-byte payload is a subtype
+ * message: byte0 = subtype (1 = plan, 2 = chunk), byte1 = sequence.
+ *  - plan (subtype 1): list of 8-byte {start,size} entries at offset 8; the
+ *    AP only validates it, no copy is needed;
+ *  - chunk (subtype 2): array of 12-byte {src,dst,size} entries at offset 8.
+ *    md1drdi[src..src+size] is copied to smem[dst..].  ``dst`` is 0 for the
+ *    big regions (streamed through the window) and a small fixed offset for
+ *    the tiny descriptor regions (it must NOT be forced to 0).
+ * Firmware `md1drdi.bin` is shipped in the initramfs.
+ */
+static const struct firmware *g_amms_fw;
+static size_t g_amms_drdi_size;
+
+static void amms_load_drdi(struct device *dev)
+{
+	const struct firmware *fw = NULL;
+
+	if (g_amms_fw)
+		return;
+	if (request_firmware(&fw, "md1drdi.bin", dev) || fw == NULL) {
+		pr_notice("[amms] request_firmware(md1drdi.bin) failed\n");
+		return;
+	}
+	/* keep the firmware buffer; freed never (device lifetime) */
+	g_amms_fw = fw;
+	g_amms_drdi_size = fw->size;
+	pr_notice("[amms] loaded md1drdi.bin size=%zu\n", g_amms_drdi_size);
+}
+
+/*
+ * SMEM_USER_MD_NVRAM_CACHE.  clear_smem_region() wipes this region on the
+ * first boot (it has no SMF_NCLR_FIRST) and mainline has no Android `nvram`
+ * service / ccci_mdinit to refill it; the vendor AP fills it from
+ * /dev/disk/by-partlabel/nvram (see qqcandy port_rpc.c, commit c5083dbe1).
+ * The modem reads this block for RF/audio calibration and operator config, so
+ * without the AP half it sees zeros.  Fill it on the first AMMS request, which
+ * arrives after the MD-start clear and before the modem reads the cache.
+ */
+#define CCCI_NVRAM_SRC		"/dev/disk/by-partlabel/nvram"
+#define CCCI_NVRAM_READ_MAX	(2 * 1024 * 1024)
+
+static unsigned int ccci_nvram_fill = 1;
+static void *g_nvram_data;
+static unsigned int g_nvram_len;
+static int g_nvram_filled;
+
+static int ccci_nvram_load(void)
+{
+	struct file *f;
+	loff_t pos = 0;
+	int got;
+
+	if (g_nvram_data)
+		return 0;
+	f = filp_open(CCCI_NVRAM_SRC, O_RDONLY | O_LARGEFILE, 0);
+	if (IS_ERR(f)) {
+		CCCI_BOOTUP_LOG(0, RPC, "nvram: open %s fail %ld\n",
+				CCCI_NVRAM_SRC, PTR_ERR(f));
+		return PTR_ERR(f);
+	}
+	g_nvram_data = vmalloc(CCCI_NVRAM_READ_MAX);
+	if (!g_nvram_data) {
+		filp_close(f, NULL);
+		return -ENOMEM;
+	}
+	/* g_nvram_data is the only consumer, plain zero-offset read */
+	got = kernel_read(f, g_nvram_data, CCCI_NVRAM_READ_MAX, &pos);
+	filp_close(f, NULL);
+	if (got <= 0) {
+		vfree(g_nvram_data);
+		g_nvram_data = NULL;
+		CCCI_BOOTUP_LOG(0, RPC, "nvram: read %s fail %d\n",
+				CCCI_NVRAM_SRC, got);
+		return -EIO;
+	}
+	g_nvram_len = got;
+	CCCI_BOOTUP_LOG(0, RPC, "nvram: %s read=0x%x\n",
+			CCCI_NVRAM_SRC, got);
+	return 0;
+}
+
+static void ccci_nvram_fill_cache(int md_id)
+{
+	struct ccci_smem_region *r;
+	unsigned int len;
+
+	if (!ccci_nvram_fill || g_nvram_filled)
+		return;
+	if (!g_nvram_data && ccci_nvram_load())
+		return;			/* region may appear later, retry */
+	r = ccci_md_get_smem_by_user_id(SMEM_USER_MD_NVRAM_CACHE);
+	if (!r || !r->size || !r->base_ap_view_vir) {
+		CCCI_BOOTUP_LOG(md_id, RPC, "nvram: no cache region (r=%p)\n", r);
+		return;
+	}
+	len = min(g_nvram_len, (unsigned int)r->size);
+	memcpy((u8 *)r->base_ap_view_vir, g_nvram_data, len);
+	g_nvram_filled = 1;
+	CCCI_BOOTUP_LOG(md_id, RPC,
+		"nvram: filled cache len=0x%x region=0x%x\n", len, r->size);
+}
+
+static void amms_handle_drdi(struct device *dev, struct rpc_pkt *pkt,
+	unsigned int *tmp_data, int *pkt_num)
+{
+	struct ccci_smem_region *smem;
+	u8 *pl, *base = NULL;
+	int len, o, n = 0, skip = 0, is_plan, is_chunk;
+	u32 seq;
+
+	amms_load_drdi(dev);
+	ccci_nvram_fill_cache(0);
+	if (!pkt[0].buf || pkt[0].len < 12) {
+		tmp_data[0] = FS_PARAM_ERROR;
+		return;
+	}
+	pl = (u8 *)pkt[0].buf;
+	len = pkt[0].len;
+	/* byte0 = subtype (1 = plan, 2 = chunk), byte1 = sequence */
+	is_plan = (pl[0] == 1);
+	is_chunk = (pl[0] == 2);
+	seq = pl[1];
+
+	smem = ccci_md_get_smem_by_user_id(SMEM_USER_MD_DRDI);
+	if (smem && smem->base_ap_view_vir)
+		base = (u8 *)smem->base_ap_view_vir;
+
+	if (base && g_amms_fw && is_chunk) {
+		/*
+		 * Chunk message: an array of 12-byte {src, dst, size} entries
+		 * starting at offset 8.  md1drdi[src..src+size] must be placed
+		 * at smem[dst..].  dst is 0 for the big regions (which are
+		 * streamed through the window) but a small fixed offset for
+		 * the tiny descriptor regions.
+		 */
+		for (o = 8; o + 12 <= len; o += 12) {
+			u32 src = pl[o] | (pl[o + 1] << 8) |
+				(pl[o + 2] << 16) | ((u32)pl[o + 3] << 24);
+			u32 dst = pl[o + 4] | (pl[o + 5] << 8) |
+				(pl[o + 6] << 16) | ((u32)pl[o + 7] << 24);
+			u32 sz = pl[o + 8] | (pl[o + 9] << 8) |
+				(pl[o + 10] << 16) | ((u32)pl[o + 11] << 24);
+
+			if (sz == 0 || sz > 0x10000) {
+				skip++;
+				continue;
+			}
+			if (src + sz > g_amms_drdi_size) {
+				skip++;
+				continue;
+			}
+			if (dst + sz > smem->size) {
+				skip++;
+				continue;
+			}
+			memcpy(base + dst, (u8 *)g_amms_fw->data + src, sz);
+			pr_debug("[amms] copy#%d src=0x%x dst=0x%x len=0x%x seq=0x%x\n",
+				n, src, dst, sz, seq);
+			n++;
+		}
+	}
+
+	if (skip)
+		CCCI_ERROR_LOG(0, RPC,
+			"amms: SKIPPED %d entries len=%d subtype=%u seq=%u b4=%u\n",
+			skip, len, pl[0], seq, pl[4]);
+	if (n == 0 || !base)
+		CCCI_NORMAL_LOG(0, RPC,
+			"amms: chunks=%d smem=%p size=0x%x drdi=%zu\n",
+			n, base, smem ? smem->size : 0, g_amms_drdi_size);
+
+	/*
+	 * 44-byte ack: pkt0={len4,0}, pkt1={len8, seq<<8, status}.
+	 * status byte4: 0x03 for the plan, else 0x00 when the request's byte4
+	 * is 1 (the final per-region "single copy" message) and 0xff otherwise.
+	 */
+	tmp_data[0] = 0;
+	tmp_data[1] = is_plan ? 0x100 : (seq << 8);
+	if (is_plan)
+		tmp_data[2] = 0x03;
+	else
+		tmp_data[2] = (pl[4] == 1) ? 0x00 : 0xff;
+	*pkt_num = 0;
+	pkt[(*pkt_num)].len = sizeof(unsigned int);
+	pkt[(*pkt_num)++].buf = (void *)&tmp_data[0];
+	pkt[(*pkt_num)].len = 2 * sizeof(unsigned int);
+	pkt[(*pkt_num)++].buf = (void *)&tmp_data[1];
+}
+
 static void ccci_rpc_work_helper(struct port_t *port, struct rpc_pkt *pkt,
 	struct rpc_buffer *p_rpc_buf, unsigned int tmp_data[])
 {
@@ -1423,6 +1621,79 @@ static void ccci_rpc_work_helper(struct port_t *port, struct rpc_pkt *pkt,
 			break;
 		}
 
+	/*
+	 * IPC_RPC_QUERY_AP_SYS_PROPERTY (0x400F): pkt[0] is a NUL terminated
+	 * property name, reply pkt[0] = u32 value length and pkt[1] = value
+	 * including its NUL. ccci_rpcd answers this via libc property_get();
+	 * mainline has no property service, so serve a small table and fall
+	 * back to an empty value (what the vendor returned for every name
+	 * this modem asked for except ro.build.version.ota).
+	 */
+	case IPC_RPC_QUERY_AP_SYS_PROPERTY:
+		{
+			static const struct {
+				const char *name;
+				const char *value;
+			} ap_prop_table[] = {
+				{ "ro.build.version.ota",
+				  "RMX6688_11.C.43_1430_202602091652" },
+			};
+			char name[128];
+			const char *value = "";
+			unsigned int value_len;
+			unsigned int i;
+
+			name[0] = '\0';
+			if (pkt_num == 1 && pkt[0].len > 0 &&
+				pkt[0].len < sizeof(name)) {
+				memcpy(name, pkt[0].buf, pkt[0].len);
+				name[pkt[0].len] = '\0';
+				for (i = 0; i < ARRAY_SIZE(ap_prop_table); i++) {
+					if (!strcmp(name, ap_prop_table[i].name)) {
+						value = ap_prop_table[i].value;
+						break;
+					}
+				}
+			}
+			value_len = strlen(value);
+			CCCI_NORMAL_LOG(0, RPC,
+				"[0x%08X]: name:%s, len:%u\n",
+				p_rpc_buf->op_id, name, value_len);
+			tmp_data[0] = value_len;
+			memcpy(&tmp_data[1], value, value_len + 1);
+			pkt_num = 0;
+			pkt[pkt_num].len = sizeof(unsigned int);
+			pkt[pkt_num++].buf = (void *)&tmp_data[0];
+			pkt[pkt_num].len = value_len + 1;
+			pkt[pkt_num++].buf = (void *)&tmp_data[1];
+			break;
+		}
+
+	/*
+	 * IPC_RPC_SAR_TABLE_IDX_QUERY_OP (0x4010): reply pkt[0] = u32 ret and
+	 * pkt[1] = u32 SAR table id. ccci_rpcd derives the id from
+	 * ro.product.sar_operator_map and
+	 * ro.vendor.oplus.radio.sar_regionmark, neither of which mainline
+	 * has; the answer it produced on this device was {0, 0}.
+	 */
+	case IPC_RPC_SAR_TABLE_IDX_QUERY_OP:
+		CCCI_NORMAL_LOG(0, RPC, "[0x%08X]: sar table idx query idx=%u\n",
+			p_rpc_buf->op_id,
+			(pkt_num == 1 && pkt[0].len == sizeof(unsigned int)) ?
+				*(unsigned int *)pkt[0].buf : 0);
+		tmp_data[0] = 0;
+		tmp_data[1] = 0;
+		pkt_num = 0;
+		pkt[pkt_num].len = sizeof(unsigned int);
+		pkt[pkt_num++].buf = (void *)&tmp_data[0];
+		pkt[pkt_num].len = sizeof(unsigned int);
+		pkt[pkt_num++].buf = (void *)&tmp_data[1];
+		break;
+
+	case IPC_RPC_AMMS_DRDI_CONTROL:
+		amms_handle_drdi(ccci_md_get_dev(), pkt, tmp_data, &pkt_num);
+		break;
+
 	default:
 		CCCI_NORMAL_LOG(0, RPC,
 		"[Error]Unknown Operation ID (0x%08X)\n",
@@ -1545,7 +1816,7 @@ static void rpc_msg_handler(struct port_t *port, struct sk_buff *skb)
 		rpc_buf->header.data[1], rpc_buf->header.channel,
 		rpc_buf->header.reserved, rpc_buf->op_id);
 	/* switch to Tx request */
-	CCCI_NORMAL_LOG(0, RPC,
+	CCCI_DEBUG_LOG(0, RPC,
 		"RPC resp op_id=0x%x para_num=%u skb_len=%u\n",
 		rpc_buf->op_id, rpc_buf->para_num, skb->len);
 	ret = port_send_skb_to_md(port, skb, 1);
@@ -1633,6 +1904,8 @@ static int port_rpc_init(struct port_t *port)
 
 	CCCI_DEBUG_LOG(0, RPC,
 		"rpc port %s is initializing\n", port->name);
+	/* Preload the AMMS DRDI blob from the initramfs before switch_root. */
+	amms_load_drdi(ccci_md_get_dev());
 	port->rx_length_th = MAX_QUEUE_LENGTH;
 	port->skb_from_pool = 1;
 	port->interception = 0;
@@ -1714,9 +1987,6 @@ int port_rpc_recv_match(struct port_t *port, struct sk_buff *skb)
 #endif
 			break;
 
-		case IPC_RPC_QUERY_AP_SYS_PROPERTY:
-		case IPC_RPC_SAR_TABLE_IDX_QUERY_OP:
-		case IPC_RPC_AMMS_DRDI_CONTROL:
 		case IPC_RPC_SAVE_MD_CAPID:
 			is_userspace_msg = 1;
 			break;

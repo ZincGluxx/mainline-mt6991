@@ -1412,6 +1412,9 @@ static inline int proxy_dispatch_recv_skb(struct port_proxy *proxy_p,
 	char matched = 0;
 	int md_state = ccci_fsm_get_md_state();
 	int channel = CCCI_INVALID_CH_ID;
+	const char *rport = "none";
+	unsigned int rlen = 0;
+	u32 rop = 0;
 
 	if (unlikely(!skb)) {
 		ret = -CCCI_ERR_INVALID_PARAM;
@@ -1421,6 +1424,10 @@ static inline int proxy_dispatch_recv_skb(struct port_proxy *proxy_p,
 	if (flag == NORMAL_DATA) {
 		ccci_h = (struct ccci_header *)skb->data;
 		channel = ccci_h->channel;
+		rlen = skb->len;
+		rop = (rlen >= 20) ? *(u32 *)(skb->data + 16) : 0;
+		pr_debug("[ccci_rx] hif=%d ch=%d len=%u op=0x%08x\n",
+			hif_id, channel, skb->len, rop);
 	} else {
 		WARN_ON(1);
 	}
@@ -1449,6 +1456,7 @@ static inline int proxy_dispatch_recv_skb(struct port_proxy *proxy_p,
 			(channel == port->rx_ch) :
 			port->ops->recv_match(port, skb));
 		if (matched) {
+			rport = port->name;
 			if (likely(skb && port->ops && port->ops->recv_skb)) {
 				ret = port->ops->recv_skb(port, skb);
 			} else {
@@ -1462,6 +1470,11 @@ static inline int proxy_dispatch_recv_skb(struct port_proxy *proxy_p,
 			break;
 		}
 	}
+
+	if (channel != CCCI_FS_RX)
+		CCCI_LEGACY_DBG_LOG(0, TAG,
+			"[ccci_rx] ch=%d len=%u op=0x%08x state=%d port=%s\n",
+			channel, rlen, rop, md_state, rport);
 
  err_exit:
 	if (ret < 0 && ret != -CCCI_ERR_PORT_RX_FULL) {

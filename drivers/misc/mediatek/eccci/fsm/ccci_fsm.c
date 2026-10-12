@@ -31,6 +31,8 @@ struct ccci_fsm_ctl *ccci_fsm_entries;
 struct md_wdt_record md_wdt_rec;
 static int needforcestop;
 static int hs2_done;
+extern unsigned long ccci_fs_rx_jiffies;
+extern void ccci_fs_handles_reset(void);
 
 struct kern_md_state_cb {
 	unsigned char host_id;
@@ -935,6 +937,16 @@ static int ccci_md_prepare_runtime_data(unsigned char *data, int length)
 	if (get_soc_md_rt_rat() == 0)
 		set_soc_md_rt_rat_str("N/Lf/Lt/W/G");
 
+	/*
+	 * The stock AP userspace (ccci_mdinit/RILD) programs md->mdlg_mode
+	 * via CCCI_IOC_SET_BOOT_DATA, so BOOT_INFO.booting_start_id ends up
+	 * 0xf0000 (mdwait_time = 0xf).  With no userspace on mainline it
+	 * stays 0.  Program the same value so the MD sees a BOOT_INFO that
+	 * is bit-identical to the working stock AP.
+	 */
+	if ((md->mdlg_mode & 0xffff0000) == 0)
+		md->mdlg_mode |= 0x000f0000;
+
 	md_feature = (struct md_query_ap_feature *)(data +
 				sizeof(struct ccci_header));
 
@@ -1450,10 +1462,12 @@ static void fsm_routine_start(struct ccci_fsm_ctl *ctl,
 {
 	int ret;
 	int count = 0, user_exit = 0, hs1_got = 0, hs2_got = 0;
+	unsigned int observe_count = 0;
 	struct ccci_fsm_event *event = NULL;
 	struct ccci_fsm_event  *next = NULL;
 	unsigned long flags;
 	struct arm_smccc_res res;
+	unsigned long hs1_jiffies = 0, stall_dump_jiffies = 0;
 
 	/* 1. state sanity check */
 	if (ctl->curr_state == CCCI_FSM_READY)
@@ -1472,6 +1486,19 @@ static void fsm_routine_start(struct ccci_fsm_ctl *ctl,
 	CCCI_NORMAL_LOG(MD_SYS1, FSM, "%s [CCIF_CLK_REQUEST] res = 0x%lX\n",
 		__func__, res.a0);
 
+	/*
+	 * The FS-idle stamp is a global kept by port_char.c and survives an
+	 * MD stop/start (it still holds the pre-exception timestamp).  If it is
+	 * left stale, the HS2-stall recovery below sees `fsel > 10s' on the very
+	 * first loop iteration of a restart and injects a duplicate runtime-data
+	 * message plus a dummy op_id=0 RPC frame while MD is still handshaking,
+	 * which makes MD assert in dmmgr_amms_v2.  Reset it for this boot.
+	 */
+	WRITE_ONCE(ccci_fs_rx_jiffies, 0);
+	stall_dump_jiffies = jiffies;
+
+	/* Every handle the previous MD session held is stale now. */
+	ccci_fs_handles_reset();
 
 	/* 2. poll for critical users exit */
 	while (count < BOOT_TIMEOUT/EVENT_POLL_INTEVAL && !needforcestop) {
@@ -1510,12 +1537,16 @@ static void fsm_routine_start(struct ccci_fsm_ctl *ctl,
 	mtk_clear_md_violation();
 	smpu_clear_md_violation();
 #endif
+	pr_info("CCCI-OBS: md1 start call\n");
 	ret = ccci_md_start();
+	pr_info("CCCI-OBS: md1 start returned %d\n", ret);
 	if (ret)
 		goto fail;
 	ctl->boot_count++;
 	count = 0;
 	while (count < BOOT_TIMEOUT/EVENT_POLL_INTEVAL && !needforcestop) {
+		if (!observe_count)
+			pr_info("CCCI-OBS: md1 first HS poll enter\n");
 		spin_lock_irqsave(&ctl->event_lock, flags);
 		if (!list_empty(&ctl->event_queue)) {
 			event = list_first_entry(&ctl->event_queue,
@@ -1543,6 +1574,7 @@ static void fsm_routine_start(struct ccci_fsm_ctl *ctl,
 				/* this API would alloc skb */
 				ret = ccci_md_send_runtime_data();
 				CCCI_NORMAL_LOG(0, FSM, "send runtime data %d\n", ret);
+				hs1_jiffies = jiffies;
 				spin_lock_irqsave(&ctl->event_lock, flags);
 			} else if (event->event_id == CCCI_EVENT_HS2) {
 				hs2_got = 1;
@@ -1554,17 +1586,70 @@ static void fsm_routine_start(struct ccci_fsm_ctl *ctl,
 			}
 		}
 		spin_unlock_irqrestore(&ctl->event_lock, flags);
+		if (!observe_count)
+			pr_info("CCCI-OBS: md1 first HS poll unlocked\n");
 		if (fsm_check_for_ee(ctl, 0)) {
 			CCCI_ERROR_LOG(0, FSM, "early exception detected\n");
 			goto fail_ee;
 		}
 		if (hs2_got)
 			goto success;
+		if (hs1_got && hs1_jiffies) {
+			unsigned long el = jiffies - hs1_jiffies;
+			unsigned long fsel = ccci_fs_rx_jiffies ?
+				jiffies - ccci_fs_rx_jiffies : 0;
+			/* MD blocks in ccismc_polling_submit_one_gpd() in the
+			 * ccismq_read_ringbuff() loop, i.e. waiting for an
+			 * AP->MD ring frame on HWQ `arg0` (1 = RPC) after FS
+			 * ends, not for H2D_SRAM.
+			 */
+			int quiet = ccci_fs_rx_jiffies ?
+				(fsel > 10 * HZ) : (el > 60 * HZ);
+
+			ccci_hif_ccif_watch();
+			if (quiet &&
+			    time_after(jiffies, stall_dump_jiffies + 10 * HZ)) {
+				struct sk_buff *skb;
+				struct ccci_header *rh;
+				int rpclen = sizeof(struct ccci_header) + 8;
+
+				stall_dump_jiffies = jiffies;
+				CCCI_NORMAL_LOG(0, FSM,
+					"HS2 stall el=%ums fs_idle=%ums dump CCIF\n",
+					jiffies_to_msecs(el),
+					jiffies_to_msecs(fsel));
+				ccci_hif_dump_status(1 << CCIF_HIF_ID,
+					DUMP_FLAG_CCIF_REG, NULL, -1);
+				ret = ccci_md_send_runtime_data();
+				CCCI_NORMAL_LOG(0, FSM,
+					"HS2 stall resend runtime data %d\n", ret);
+				skb = ccci_alloc_skb(rpclen, 0, 1);
+				if (skb) {
+					memset(skb_put(skb, rpclen), 0, rpclen);
+					rh = (struct ccci_header *)skb->data;
+					rh->data[0] = CCCI_MAGIC_NUM;
+					rh->data[1] = rpclen;
+					rh->channel = CCCI_RPC_TX;
+					ret = ccci_hif_send_skb(CCIF_HIF_ID, 1,
+								skb, 0, 0);
+					CCCI_NORMAL_LOG(0, FSM,
+						"HS2 stall HWQ1 rpc reply %d\n",
+						ret);
+					if (ret)
+						ccci_free_skb(skb);
+				}
+			}
+		}
 		/* defeatured for now, just enlarge BOOT_TIMEOUT */
 		if (atomic_read(&ctl->fs_ongoing))
 			count = 0;
 		else
 			count++;
+		observe_count++;
+		if (!(observe_count % (1000 / EVENT_POLL_INTEVAL)))
+			pr_info("CCCI-OBS: md1 HS poll alive n=%u hs1=%d hs2=%d fs=%d\n",
+				observe_count, hs1_got, hs2_got,
+				atomic_read(&ctl->fs_ongoing));
 		msleep(EVENT_POLL_INTEVAL);
 	}
 	if (needforcestop) {

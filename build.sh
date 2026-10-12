@@ -1,10 +1,10 @@
 #!/bin/bash
 # Build a mainline kernel + DTB for realme GT7 (RMX6688) / MT6991.
 #
-# Runs natively on the phone itself (aarch64 host, no cross toolchain needed).
 # The repo root IS the kernel tree; all build products land under out/
 # (kbuild O=out) so the git tree stays clean.
 #
+# Runs natively on the phone itself (aarch64 host, no cross toolchain needed).
 # Produces:
 #   out/arch/arm64/boot/Image
 #   out/arch/arm64/boot/dts/mediatek/mt6991-realme-rmx6688.dtb
@@ -14,10 +14,10 @@
 # ramdisk the boot image happens to carry.
 #
 # Order matters: the external modules (scp / ccci_fsm_scp / connscp /
-# clk-mt6991-drv) are built *before* the initramfs list is generated and the
-# Image is linked, so the .ko files that go into the initramfs are the ones
-# built by this run.  A single `./build.sh` therefore always produces an Image
-# whose initramfs carries the current modules.
+# clk-mt6991-drv / gps_drv_dl_v062) are built *before* the initramfs list is
+# generated and the Image is linked, so the .ko files that go into the
+# initramfs are the ones built by this run.  A single `./build.sh` therefore
+# always produces an Image whose initramfs carries the current modules.
 #
 # Foreground note: step [1/6] compiles the init. When running this script in
 # the background, run that gcc line by hand first so a compile error is not
@@ -36,9 +36,11 @@ JOBS=${JOBS:-4}
 mkdir -p "$OUT"
 cd "$K"
 
-# Write $IRFS/cpio_list, the initramfs file list.  It references whatever module
-# .ko files are currently cached at $K, so it must be (re)generated after the
-# module builds and before 'make Image'.
+# Write $IRFS/cpio_list, the initramfs file list.  The .ko entries reference
+# whatever module files currently exist in $K, so it must be (re)generated
+# after the module builds and before 'make Image'.  Every other file is under
+# $IRFS/firmware/, which is committed in the nested initramfs repo so this
+# tree stays self-contained.
 gen_cpio_list() {
 	# gen_init_cpio's list format declares device nodes without needing mknod,
 	# which proot would not allow anyway.
@@ -51,6 +53,7 @@ dir /proc 0755 0 0
 dir /sys 0755 0 0
 dir /bin 0755 0 0
 file /bin/busybox $IRFS/busybox 0755 0 0
+file /bin/ccbgrab $IRFS/ccbgrab 0755 0 0
 dir /lib 0755 0 0
 dir /lib/firmware 0755 0 0
 dir /lib/firmware/tp 0755 0 0
@@ -64,31 +67,30 @@ dir /lib/firmware/arm/mali 0755 0 0
 dir /lib/firmware/arm/mali/arch13.8 0755 0 0
 file /lib/firmware/arm/mali/arch13.8/mali_csffw.bin $IRFS/firmware/arm/mali/arch13.8/mali_csffw.bin 0644 0 0
 dir /lib/firmware/mediatek 0755 0 0
-dir /lib/firmware/mediatek/mt6991 0755 0 0
-# MT6653 Wi-Fi firmware + NVRAM and the conninfra/connfem configs
-file /lib/firmware/WIFI_RAM_CODE_MT6653_2g2a_1.bin $IRFS/firmware/WIFI_RAM_CODE_MT6653_2g2a_1.bin 0644 0 0
-file /lib/firmware/WIFI_MT6653_PATCH_MCU_2g2a_1_hdr.bin $IRFS/firmware/WIFI_MT6653_PATCH_MCU_2g2a_1_hdr.bin 0644 0 0
-file /lib/firmware/WIFI_MT6653_PHY_RAM_CODE_2g2a_1.bin $IRFS/firmware/WIFI_MT6653_PHY_RAM_CODE_2g2a_1.bin 0644 0 0
-file /lib/firmware/mediatek/WIFI_RAM_CODE_MT6653_2g2a_1.bin $IRFS/firmware/WIFI_RAM_CODE_MT6653_2g2a_1.bin 0644 0 0
-file /lib/firmware/mediatek/WIFI_MT6653_PATCH_MCU_2g2a_1_hdr.bin $IRFS/firmware/WIFI_MT6653_PATCH_MCU_2g2a_1_hdr.bin 0644 0 0
-file /lib/firmware/mediatek/WIFI_MT6653_PHY_RAM_CODE_2g2a_1.bin $IRFS/firmware/WIFI_MT6653_PHY_RAM_CODE_2g2a_1.bin 0644 0 0
-file /lib/firmware/WIFI $IRFS/firmware/WIFI 0644 0 0
-file /lib/firmware/mediatek/WIFI $IRFS/firmware/WIFI 0644 0 0
-file /lib/firmware/mediatek/mt6991/WIFI $IRFS/firmware/WIFI 0644 0 0
-file /lib/firmware/conninfra.cfg $IRFS/firmware/conninfra.cfg 0644 0 0
-file /lib/firmware/connfem.cfg $IRFS/firmware/connfem.cfg 0644 0 0
-# MT6653 Bluetooth firmware
 file /lib/firmware/BT_RAM_CODE_MT6653_2g2a_1_hdr.bin $IRFS/firmware/BT_RAM_CODE_MT6653_2g2a_1_hdr.bin 0644 0 0
 file /lib/firmware/BT_RAM_CODE_MT6653_1_1_hdr.bin $IRFS/firmware/BT_RAM_CODE_MT6653_1_1_hdr.bin 0644 0 0
 file /lib/firmware/BT_FW.cfg $IRFS/firmware/BT_FW.cfg 0644 0 0
 file /lib/firmware/mediatek/BT_RAM_CODE_MT6653_2g2a_1_hdr.bin $IRFS/firmware/BT_RAM_CODE_MT6653_2g2a_1_hdr.bin 0644 0 0
-# NXP TFA98xx speaker-amp tuning container
+file /lib/firmware/WIFI_RAM_CODE_MT6653_2g2a_1.bin $IRFS/firmware/WIFI_RAM_CODE_MT6653_2g2a_1.bin 0644 0 0
+file /lib/firmware/WIFI_MT6653_PATCH_MCU_2g2a_1_hdr.bin $IRFS/firmware/WIFI_MT6653_PATCH_MCU_2g2a_1_hdr.bin 0644 0 0
+file /lib/firmware/WIFI_MT6653_PHY_RAM_CODE_2g2a_1.bin $IRFS/firmware/WIFI_MT6653_PHY_RAM_CODE_2g2a_1.bin 0644 0 0
+file /lib/firmware/conninfra.cfg $IRFS/firmware/conninfra.cfg 0644 0 0
+file /lib/firmware/connfem.cfg $IRFS/firmware/connfem.cfg 0644 0 0
+file /lib/firmware/mediatek/WIFI_RAM_CODE_MT6653_2g2a_1.bin $IRFS/firmware/WIFI_RAM_CODE_MT6653_2g2a_1.bin 0644 0 0
+file /lib/firmware/mediatek/WIFI_MT6653_PATCH_MCU_2g2a_1_hdr.bin $IRFS/firmware/WIFI_MT6653_PATCH_MCU_2g2a_1_hdr.bin 0644 0 0
+file /lib/firmware/mediatek/WIFI_MT6653_PHY_RAM_CODE_2g2a_1.bin $IRFS/firmware/WIFI_MT6653_PHY_RAM_CODE_2g2a_1.bin 0644 0 0
+dir /lib/firmware/mediatek/mt6991 0755 0 0
+file /lib/firmware/WIFI $IRFS/firmware/WIFI 0644 0 0
+file /lib/firmware/mediatek/WIFI $IRFS/firmware/WIFI 0644 0 0
+file /lib/firmware/mediatek/mt6991/WIFI $IRFS/firmware/WIFI 0644 0 0
 file /lib/firmware/tfa98xx.cnt $IRFS/firmware/tfa98xx.cnt 0644 0 0
+file /lib/firmware/md1drdi.bin $IRFS/firmware/md1drdi.bin 0644 0 0
 file /init $IRFS/init 0755 0 0
 EOF
 	# Loadable modules, built by the module step below and cached at $K.
 	echo "dir /lib/modules 0755 0 0" >> "$IRFS/cpio_list"
-	for ko in scp.ko ccci_fsm_scp.ko connscp.ko clk-mt6991-drv.ko; do
+	for ko in scp.ko ccci_fsm_scp.ko connscp.ko clk-mt6991-drv.ko \
+			gps_drv_dl_v062.ko; do
 		if [ -f "$K/$ko" ]; then
 			echo "file /lib/modules/$ko $K/$ko 0644 0 0" >> "$IRFS/cpio_list"
 		else
@@ -106,11 +108,17 @@ gcc -static -O2 -Wall -Wextra -o "$IRFS/init" "$IRFS/$INIT_SRC"
 strip "$IRFS/init"
 ls -la "$IRFS/init"
 
-echo "==> [2/6] initramfs cpio_list (first cut; regenerated after modules)"
+# CCB/DHL probe tool: init runs `ccbgrab init` before DO_START_MD, and the
+# binary is copied into the rootfs at switch_root so it stays usable after boot.
+# Its source lives at the repo root next to the other build facilities.
+gcc -static -O2 -Wall -Wextra -o "$IRFS/ccbgrab" "$K/ccbgrab.c"
+strip "$IRFS/ccbgrab"
+ls -la "$IRFS/ccbgrab"
+
+echo "==> [2/6] config"
+# CONFIG_INITRAMFS_SOURCE is generated here so the fragment stays path-free.
 gen_cpio_list
 
-echo "==> [3/6] config"
-# CONFIG_INITRAMFS_SOURCE is generated here so the fragment stays path-free.
 cat "$K/rmx6688.fragment" > "$OUT/.fragment.gen"
 echo "CONFIG_INITRAMFS_SOURCE=\"$IRFS/cpio_list\"" >> "$OUT/.fragment.gen"
 
@@ -146,7 +154,7 @@ grep -q "^CONFIG_ARM64_EMBEDDED_DTB_SOURCE=\"arch/arm64/boot/dts/$DTB\"" "$OUT/.
 echo "  cmdline $(grep '^CONFIG_CMDLINE=' "$OUT/.config")"
 [ "$fail" = 0 ] || { echo "config verification FAILED"; exit 1; }
 
-echo "==> [4/6] DTB"
+echo "==> [3/6] DTB"
 # Build only our board's DTB, not the whole tree: an unrelated DTB failing
 # elsewhere in mainline would otherwise abort this step before ever reaching
 # mediatek/.  The target is given relative to arch/arm64/boot/dts/.
@@ -162,21 +170,44 @@ ls -la "$OUT/arch/arm64/boot/dts/$DTB"
 echo "--- dtc warnings for our DTB (should be none) ---"
 "$OUT/scripts/dtc/dtc" -I dtb -O dts "$OUT/arch/arm64/boot/dts/$DTB" -o /dev/null
 
-echo "==> [5/6] kernel modules (scp, ccci_fsm_scp, connscp, clk-mt6991-drv)"
+echo "==> [4/6] kernel modules (scp, ccci_fsm_scp, connscp, clk-mt6991-drv, gps)"
 # The external-module builds link against the tree's Module.symvers, which a
 # kernel link produces.  On an already-built tree it is present; on a first
 # build, produce vmlinux once now (with a first-cut initramfs list) so the
 # module builds have something to link against.
 if [ ! -f "$OUT/vmlinux" ]; then
 	echo "  (no vmlinux yet; building it first)"
-	gen_cpio_list
 	ARCH=arm64 make O="$OUT" -j"$JOBS" vmlinux
 fi
+
 # kbuild only emits vmlinux.symvers unless a 'make modules' pass runs.  The
 # external module builds here only need the vmlinux exports (mbox/ipi/...),
 # which vmlinux.symvers already carries, so make it visible as Module.symvers.
 if [ ! -f "$OUT/Module.symvers" ] && [ -f "$OUT/vmlinux.symvers" ]; then
 	cp "$OUT/vmlinux.symvers" "$OUT/Module.symvers"
+fi
+
+# scripts/Makefile.modfinal's "%.ko" pattern rule lists
+# $(objtree)/scripts/module.lds as a prerequisite.  Under O=out that file only
+# appears via 'make modules_prepare' (Makefile: `modules_prepare: prepare`),
+# and with no rule for it inside Makefile.modfinal itself its absence silently
+# rules out the pattern -> "No rule to make target '<mod>.ko', needed by
+# '__modfinal'".  modules_prepare is too heavy here, so preprocess the one
+# linker script directly with the same cpp invocation the kernel uses (the
+# include list is LINUXINCLUDE in O=out form), which reproduces the in-tree
+# scripts/module.lds byte for byte.
+if [ ! -f "$OUT/scripts/module.lds" ]; then
+	mkdir -p "$OUT/scripts"
+	gcc -E -nostdinc \
+		-I arch/arm64/include -I "$OUT"/arch/arm64/include/generated \
+		-I include -I "$OUT"/include \
+		-I arch/arm64/include/uapi -I "$OUT"/arch/arm64/include/generated/uapi \
+		-I include/uapi -I "$OUT"/include/generated/uapi \
+		-include include/linux/compiler-version.h -include include/linux/kconfig.h \
+		-D__KERNEL__ -mlittle-endian -DKASAN_SHADOW_SCALE_SHIFT= \
+		-P -Uarm64 -D__ASSEMBLY__ -DLINKER_SCRIPT \
+		-o "$OUT/scripts/module.lds" scripts/module.lds.S
+	echo "  generated $OUT/scripts/module.lds"
 fi
 
 # Each spec is "<make -M dir>:<module.ko>".  KBUILD_MODPOST_WARN lets the .ko
@@ -192,7 +223,10 @@ for spec in \
 	ARCH=arm64 make O="$OUT" -j"$JOBS" KBUILD_MODPOST_WARN=1 \
 		M="$mdir" modules 2>&1 | tail -3
 	# With O=out the external-module .ko still lands in-tree under $mdir.
-	ko=$(find "$OUT/$mdir" "$mdir" -name "$mko" 2>/dev/null | head -1)
+	# -print -quit + "|| true": under 'set -euo pipefail' neither a piped
+	# head (SIGPIPE on find) nor find's own exit 1 (a $OUT/$mdir that does
+	# not exist for this module) may abort the script.
+	ko=$(find "$OUT/$mdir" "$mdir" -name "$mko" -print -quit 2>/dev/null || true)
 	if [ -n "$ko" ]; then
 		cp "$ko" "$K/$mko"
 		echo "  cached $ko -> $K/$mko"
@@ -201,9 +235,31 @@ for spec in \
 	fi
 done
 
-echo "==> [6/6] kernel Image (this is the long part)"
+# gps_drv_dl_v062.ko ---
+# Vendor MT6991 GPS data-link driver (module).  Its Kbuild is gated on
+# CONFIG_MTK_GPS_SUPPORT=y and resolves the built-in conninfra API through the
+# kernel symvers, so refresh Module.symvers from vmlinux.symvers first (the
+# in-tree Module.symvers is only regenerated by 'make modules').
+if [ -f "$OUT/vmlinux.symvers" ]; then
+	cp -f "$OUT/vmlinux.symvers" "$OUT/Module.symvers"
+fi
+ARCH=arm64 make O="$OUT" -j"$JOBS" KBUILD_MODPOST_WARN=1 CONFIG_MTK_GPS_SUPPORT=y \
+	M=drivers/misc/mediatek/connectivity/gps/data_link/plat/v062 modules 2>&1 | tail -3
+mdir=drivers/misc/mediatek/connectivity/gps/data_link/plat/v062
+ko=$(find "$OUT/$mdir" "$mdir" -name 'gps_drv_dl_v062.ko' -print -quit 2>/dev/null || true)
+if [ -n "$ko" ]; then
+	cp "$ko" "$K/gps_drv_dl_v062.ko"
+	echo "  cached $ko -> $K/gps_drv_dl_v062.ko"
+else
+	echo "  WARNING: gps_drv_dl_v062.ko not found"
+fi
+
+echo "==> [5/6] initramfs cpio_list"
 # Regenerate now that this run's .ko are cached, then link.
 gen_cpio_list
+cat "$IRFS/cpio_list"
+
+echo "==> [6/6] kernel Image (this is the long part)"
 ARCH=arm64 make O="$OUT" -j"$JOBS" Image
 
 # gen_init_cpio only *warns* (exit 0) about lines it cannot parse and silently
