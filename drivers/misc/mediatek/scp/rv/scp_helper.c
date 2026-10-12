@@ -76,6 +76,17 @@
 #define DEBUG_CMD_BUFFER_SZ  0x40000
 #define MAX_RETRY_BEFORE_KE 30
 
+/*
+ * Budget for the quiet polling of the SCP's sleep/DVFS service at the top of
+ * scp_A_notify_ws().  The SCP raises READY before that service answers
+ * IPI_OUT_C_SLEEP_0, so the very first ULPOSC sync always hits the 100 ms
+ * completion timeout; a round of three slots costs ~320 ms, so five rounds at
+ * 200 ms apart cover about 2.6 s.  Anything past that is a real hang and falls
+ * into the original loud failure/reset path untouched.
+ */
+#define SCP_ULPOSC_SYNC_QUIET_RETRY 5
+#define SCP_ULPOSC_SYNC_QUIET_MS 200
+
 int retry_count_before_KE;
 
 /* scp resume apmcu ipi debug flag */
@@ -769,8 +780,28 @@ static void scp_A_notify_ws(struct work_struct *ws)
 
 	if (scp_dvfs_feature_enable()) {
 		uint32_t cali_times = 0;
+		unsigned int quiet_retry = SCP_ULPOSC_SYNC_QUIET_RETRY;
 
 		while (!sync_ulposc_cali_data_to_scp()) {
+			/*
+			 * The SCP raises its READY ipi before its sleep/DVFS
+			 * service answers IPI_OUT_C_SLEEP_0: the first round
+			 * always runs into the 100 ms completion timeout (three
+			 * slots back to back, and the timeout dump shows the mbox
+			 * recv irq status = 0, i.e. no reply at all).  There is
+			 * no ipi announcing that the service is up, so poll it
+			 * quietly for a while -- it comes up by itself and the
+			 * next round succeeds immediately, which beats sleeping
+			 * 2 s and logging a "cali #1 fail" that is not one.
+			 * A genuinely wedged SCP still falls through to the
+			 * original failure/reset path once the quiet budget is
+			 * spent.
+			 */
+			if (quiet_retry) {
+				quiet_retry--;
+				msleep(SCP_ULPOSC_SYNC_QUIET_MS);
+				continue;
+			}
 			/*
 			 * Although notify_ipi has been sent,
 			 * the scp seems stop again, try to wait WDT.
@@ -787,6 +818,13 @@ static void scp_A_notify_ws(struct work_struct *ws)
 		}
 		/* release pll clock after scp ulposc calibration */
 		scp_pll_ctrl_set(PLL_DISABLE, CLK_26M);
+
+		if (quiet_retry != SCP_ULPOSC_SYNC_QUIET_RETRY) {
+			unsigned int used = SCP_ULPOSC_SYNC_QUIET_RETRY - quiet_retry;
+
+			pr_notice("[SCP] ulposc sync waited for %u quiet retr%s\n",
+				  used, used == 1 ? "y" : "ies");
+		}
 
 		/*
 		 * Calling sync_ulposc_cali_data_to_scp() will resets the frequency request
