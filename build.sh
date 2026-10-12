@@ -113,7 +113,7 @@ ls -la "$IRFS/init"
 # CCB/DHL probe tool: init runs `ccbgrab init` before DO_START_MD, and the
 # binary is copied into the rootfs at switch_root so it stays usable after boot.
 # Its source lives at the repo root next to the other build facilities.
-gcc -static -O2 -Wall -Wextra -o "$IRFS/ccbgrab" "$K/ccbgrab.c"
+gcc -static -O2 -Wall -Wextra -o "$IRFS/ccbgrab" "$IRFS/ccbgrab.c"
 strip "$IRFS/ccbgrab"
 ls -la "$IRFS/ccbgrab"
 
