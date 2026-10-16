@@ -53,7 +53,6 @@ dir /proc 0755 0 0
 dir /sys 0755 0 0
 dir /bin 0755 0 0
 file /bin/busybox $IRFS/busybox 0755 0 0
-file /bin/ccbgrab $IRFS/ccbgrab 0755 0 0
 dir /lib 0755 0 0
 dir /lib/firmware 0755 0 0
 dir /lib/firmware/tp 0755 0 0
@@ -109,13 +108,6 @@ INIT_SRC=${INIT_SRC:-init-rootfs.c}
 gcc -static -O2 -Wall -Wextra -o "$IRFS/init" "$IRFS/$INIT_SRC"
 strip "$IRFS/init"
 ls -la "$IRFS/init"
-
-# CCB/DHL probe tool: init runs `ccbgrab init` before DO_START_MD, and the
-# binary is copied into the rootfs at switch_root so it stays usable after boot.
-# Its source lives at the repo root next to the other build facilities.
-gcc -static -O2 -Wall -Wextra -o "$IRFS/ccbgrab" "$IRFS/ccbgrab.c"
-strip "$IRFS/ccbgrab"
-ls -la "$IRFS/ccbgrab"
 
 echo "==> [2/6] config"
 # CONFIG_INITRAMFS_SOURCE is generated here so the fragment stays path-free.

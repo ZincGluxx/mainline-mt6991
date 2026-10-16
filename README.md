@@ -50,7 +50,7 @@ aarch64)完成,无交叉工具链。历史/约束见文末。
 |---|---|
 | `arch/arm64/boot/dts/mediatek/mt6991*.dts*` | 板级/SoC DTS + 保留内存(提交进内核树) |
 | `arch/arm64/kernel/embedded-dtb.S` 等 | CONFIG_ARM64_EMBEDDED_DTB:把 DTB 用 .incbin 链进 Image |
-| `initramfs/` | **独立嵌套 git 仓库**:initramfs 源码(init.c 调试 init / init-rootfs.c rootfs 切换 init)、busybox、`ccbgrab.c`(CCB/DHL 探针,build.sh [1/6] 静态编成 `initramfs/ccbgrab`)、以及 `firmware/`(触摸 + mali CSF + MT6653 WiFi/BT 固件/NVRAM + conninfra/connfem cfg + tfa98xx.cnt + md1drdi.bin)——固件与工具源码都必须在嵌套仓库里,否则本仓库构建的镜像会缺固件/缺 ccbgrab。`init` 与 `cpio_list`、`ccbgrab`(二进制)是生成物,已被 .gitignore |
+| `initramfs/` | **独立嵌套 git 仓库**:initramfs 源码(init.c 调试 init / init-rootfs.c rootfs 切换 init)、busybox、以及 `firmware/`(触摸 + mali CSF + MT6653 WiFi/BT 固件/NVRAM + conninfra/connfem cfg + tfa98xx.cnt + md1drdi.bin)——固件与 init 源码必须在嵌套仓库里,否则本仓库构建的镜像会缺固件/缺 init。`init` 与 `cpio_list` 是生成物,已被 .gitignore |
 | `out/` | kbuild O=out 全部产物(.config/Image/System.map/dtb,已 gitignore) |
 | `bt/` | pack_boot.sh 工作区:magiskboot + 原厂 boot.img + 成品(已 gitignore) |
 | `build.sh` | 一次构建(6 步,见下) |
@@ -69,7 +69,7 @@ gcc -static -O2 -Wall -Wextra -o initramfs/init initramfs/init-rootfs.c
 nohup ./build.sh > out/build.log 2>&1 &   # 产物:out/arch/arm64/boot/Image
 ```
 
-build.sh 步骤:`[1/6]` 静态 init + ccbgrab(INIT_SRC,默认 init-rootfs.c)→
+build.sh 步骤:`[1/6]` 静态 init(INIT_SRC,默认 init-rootfs.c)→
 `[2/6]` gen_cpio_list + merge_config + 18 项 CONFIG 校验 → `[3/6]` 只编本板 DTB
 → `[4/6]` 5 个可加载模块(scp / ccci_fsm_scp / connscp / clk-mt6991-drv /
 gps_drv_dl_v062)→ `[5/6]` 重新 gen_cpio_list → `[6/6]` Image + **内嵌 DTB
