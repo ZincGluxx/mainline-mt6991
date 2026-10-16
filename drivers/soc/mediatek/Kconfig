@@ -119,4 +119,16 @@ config MTK_SCPSYS_MT6991
 	  domain framework.  Required by the modem (the CCIF sits in the MD
 	  power domain), and by the display SMI/IOMMU/GCE subsystem.
 
+config MT6991_PMIC_EARLY
+	bool "MediaTek MT6991 early board rail bring-up"
+	depends on OF
+	help
+	  Raise the board's early power rails (touch AVDD, modem bucks, amp
+	  reset) from devicetree sequences at subsys_initcall, before any
+	  device_initcall consumer probes.  The sequences go over a bare
+	  PMIF/SWINF window because the mainline PMIF driver cannot complete
+	  16-bit extended register accesses on MT6991.
+
+	  Say Y here for the realme RMX6688 mainline port.
+
 endmenu

@@ -335,7 +335,36 @@ CONFIG_BT_MTKUART=y
 CONFIG_SPMI=y
 CONFIG_SPMI_MTK_PMIF=y
 CONFIG_REGMAP_SPMI=y
+CONFIG_REGMAP_IRQ=y
 CONFIG_CHARGER_MT6379=y
+
+# --- MT6363 (main PMIC, SPMI USID 4) ---------------------------------------
+# The vendor MTK SPMI PMIC MFD (drivers/mfd/mtk-spmi-pmic.c) + MT6363
+# regulator driver are in the tree but stay OFF: the PMIC answers SPMI only
+# after it is woken, and the MFD's first (CID) read times out (-110) on this
+# port, which also leaves the SWINF busy enough to make init's raw-SPMI
+# mt6363 writes silent no-ops.  Until that is sorted out the MD rails are
+# driven by init-rootfs.c's md_rails_up(), which falls back to raw SPMI
+# whenever the regulator driver is not the owner.
+# CONFIG_MFD_MTK_SPMI_PMIC / CONFIG_REGULATOR_MT6363
+
+# --- MT6373 (second PMIC, SPMI USID 5): touch VCI + amp rails -------------
+# Full vendor port (drivers/regulator/mt6373-regulator.c) stays in the tree
+# but is OFF: it talks through devm_regmap_init_spmi_ext(), and every 16-bit
+# extended register access (PMIF_CMD_EXT_REG_LONG) times out waiting for
+# SWINF_WFVLDCLR in the mainline PMIF driver, so all 39 rails fail to
+# register (and it spams ~40 error lines per boot).  Short (8-bit) register
+# accesses on the same channel work fine, which is what the keys/charger use.
+# The VTP rail the touch panel needs is raised instead by the early sequence
+# driver below; keep this off until the PMIF long-address path is fixed.
+# CONFIG_REGULATOR_MT6373
+
+# --- Early board rails (mt6991-pmic-early) --------------------------------
+# Runs the devicetree rail sequences (touch VTP now; MD bucks / amp reset /
+# codec GPIO to follow) at subsys_initcall -- strictly before any
+# device_initcall consumer such as the SPI6 controller.  Uses a bare
+# SWINF handshake, so it does not depend on the broken PMIF long path.
+CONFIG_MT6991_PMIC_EARLY=y
 
 
 # --- Modem / CCCI (M80: CCIF + DPMAIF) ------------------------------------

@@ -17,3 +17,4 @@ obj-$(CONFIG_MTK_SCPSYS_MT6991) += mtk-scpsys-mt6991-mmpc.o
 obj-$(CONFIG_MTK_SCPSYS_MT6991) += mtk-scpsys-mt6991-ivi.o
 obj-$(CONFIG_MTK_MBOX) += mtk-mbox.o
 obj-$(CONFIG_MTK_IPI) += mtk_tinysys_ipi.o
+obj-$(CONFIG_MT6991_PMIC_EARLY) += mt6991-pmic-early.o

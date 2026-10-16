@@ -282,6 +282,18 @@
  * SoC GPIO).  The driver polls TOPSTATUS because the MT6991 SPMI controller
  * runs without an interrupt domain.
  */
+/*
+ * MT6373 (second PMIC, SPMI USID 5).  The full vendor regulator driver
+ * (drivers/regulator/mt6373-regulator.c) is still in the tree but is not
+ * built: it talks through devm_regmap_init_spmi_ext(), and every 16-bit
+ * extended register access on this SoC times out in the mainline PMIF
+ * driver.  The rails it would own are raised instead by the early sequence
+ * node below (mt6991-pmic-early), which speaks the bare SWINF handshake.
+ *
+ * VTP is the touch panel's analogue rail (3.1 V).  See the pmic-early node
+ * for the actual register writes; avdd-supply still points at &reg_vtouch
+ * until the kernel-raised rail has been proven on its own.
+ */
 &spmi1 {
 	mt6363: pmic@4 {
 		compatible = "mediatek,mt6363";
@@ -300,6 +312,381 @@
 			home {
 				linux,keycodes = <KEY_VOLUMEUP>;
 			};
+		};
+
+	};
+
+	mt6373: pmic@5 {
+		compatible = "mediatek,mt6373";
+		reg = <0x5 SPMI_USID>;
+		#address-cells = <1>;
+		#size-cells = <0>;
+
+		mt6373_vtp: regulators {
+			compatible = "regulator-mt6373-vtp";
+
+			vtp {
+				regulator-compatible = "VTP";
+				regulator-name = "vtp";
+				regulator-min-microvolt = <3100000>;
+				regulator-max-microvolt = <3100000>;
+				regulator-always-on;
+			};
+		};
+	};
+};
+
+/*
+ * Early board rails, applied by mt6991-pmic-early at subsys_initcall.
+ *
+ * The sequences live here (not in the driver) because the mainline PMIF
+ * controller cannot finish a 16-bit extended register access on MT6991 --
+ * every one times out on SWINF_WFVLDCLR -- so they go over a bare SWINF
+ * handshake on the same PMIF window init-rootfs.c used to mmap.
+ *
+ * subsys_initcall runs strictly before any device_initcall driver can
+ * register, i.e. before the SPI6 controller, so the touch panel's first
+ * probe sees AVDD already up and no longer needs an unbind/rebind.
+ *
+ * avdd-supply deliberately keeps pointing at the &reg_vtouch stub for now:
+ * leave that safety net in place until a boot has been seen with the panel
+ * coming up on the kernel-raised rail alone.
+ */
+/ {
+	pmic-early {
+		compatible = "realme,rmx6688-pmic-early";
+		#address-cells = <2>;
+		#size-cells = <2>;
+		/* 1:1 map: the children's reg are already CPU physical */
+		ranges;
+
+		/*
+		 * PMIF window 0x1c01a000 (spmi1), SWINF channel 2 at ACC +0x880 --
+		 * the same bus, channel and command encoding init uses, and the same
+		 * channel the kernel SPMI driver drives later.
+		 */
+		pmif1: pmif1 {
+			reg = <0x0 0x1c01a000 0x0 0x1000>;
+			mediatek,swinf-offset = <0x880>;
+		};
+
+		/*
+		 * SoC PIO (pinctrl@1002d000).  No mediatek,swinf-offset, so the
+		 * driver reads/writes it as plain MMIO -- this is the window
+		 * init-rootfs.c uses for the GPIO9 "codec-en" pin.
+		 */
+		pio_early: pio {
+			reg = <0x0 0x1002d000 0x0 0x1000>;
+		};
+
+		/*
+		 * pinctrl register bank 12 ("lb2", 0x13110000).  IES/PD/PU/SMT/DRV
+		 * are NOT in bank 0: mt8196's field tables give each pin group its
+		 * own i_base (pinctrl-mt8196.c), and pins 99/100 (i2c0) plus
+		 * 104/105 (i2c6) all live in bank 12.  Everything dumped from
+		 * pio_early above is bank 0, so the earlier "IES=0" conclusion
+		 * read unrelated pins.  MODE/DIR/DI/DO really are bank 0 though,
+		 * which is why the MODE decode (0x11 for 104/105) was right.
+		 *
+		 * Bit positions in this bank:
+		 *   IES 0x0050 / PD 0x0080 / PU 0x0090
+		 *        pin99=bit9, pin100=bit12, pin104=bit11, pin105=bit14
+		 *   SMT 0x00c0
+		 *        pin99=bit6, pin100=bit9, pin104=bit8, pin105=bit11
+		 *   DRV 0x0000   pin99=bits18-20, pin100=bits27-29, pin104=bits24-26
+		 *   DRV 0x0010   pin105=bits3-5
+		 */
+		pio_lb2: pio-lb2 {
+			reg = <0x0 0x13110000 0x0 0x1000>;
+		};
+
+		i2c0ctl: i2c0ctl {
+			reg = <0x0 0x13130000 0x0 0x1000>;
+		};
+
+		i2c6ctl: i2c6ctl {
+			reg = <0x0 0x13170000 0x0 0x1000>;
+		};
+
+		/*
+		 * MT6373 VTP LDO (SPMI USID 5) -- the touch panel's analogue rail.
+		 *   RG_LDO_VTP_EN  0x1d23  bit0 = enable, bit1 = low-power (clear it)
+		 *   RG_VTP_VOSEL   0x1e35  [3:0] = ldo_volt_table1 index 12 = 3.1 V
+		 * Steps are <reg mask value delay_us>; mask ~0 = plain write.
+		 */
+		touch-vtp {
+			mediatek,bus = <&pmif1>;
+			mediatek,usid = <0x05>;
+			mediatek,state = <0x1d23 0x01 0x01>,
+					 <0x1e35 0xff 0x0c>;
+			mediatek,steps = <0x1e35 0xffffffff 0x0c 0>,
+					 <0x1d23 0x00000003 0x00000001 20000>;
+		};
+
+
+		/*
+		 * Read-only probes (mediatek,state with no mediatek,steps).
+		 * They log the current state and never write, so they are safe
+		 * to carry in every boot while a question is still open.
+		 *
+		 * i2c6 (SCL=GPIO104, SDA=GPIO105) NAKs every device in mainline
+		 * while i2c0/i2c1 on the same west i2c wrapper answer, so either
+		 * the pinmux did not land or the bus is unpowered.  MODE for pin
+		 * N lives at 0x300 + (N/8)*0x10, 4 bits per pin, so 104/105 share
+		 * 0x3d0 (nibble 0 and nibble 1); SCL6/SDA6 are function 1, hence
+		 * an expected byte of 0x11.
+		 */
+		pinmux-check {
+			mediatek,bus = <&pio_early>;
+			mediatek,state = <0x3d0 0x000000ff 0x00000011>;
+		};
+
+		/*
+		 * Bootloader pad state for the I2C pins, sampled at 88 ms
+		 * before pinctrl claims them (i2c6 probes at ~7 s).  Android
+		 * never reconfigures these, so this is exactly the config the
+		 * running phone has.  mt8196 field tables (pinctrl-mt8196.c):
+		 *   IES 0x0050  bit9/12 = pin99/100 (i2c0), bit11/14 = pin104/105 (i2c6)
+		 *   PD  0x0080  same bit positions
+		 *   PU  0x00c0  same bit positions
+		 *   DRV 0x0000  bit18/27 = pin99/100, bit24 (pin104); 0x0010 bit3 (pin105)
+		 */
+		i2c-pad-boot {
+			mediatek,bus = <&pio_early>;
+			mediatek,state = <0x0050 0xffffffff 0x00000000>,   /* IES  99/100=bit9/12  104/105=bit11/14 */
+					 <0x0080 0xffffffff 0x00000000>,   /* PD   same bits */
+					 <0x00c0 0xffffffff 0x00000000>,   /* PU   same bits */
+					 <0x0000 0xffffffff 0x00000000>,   /* DRV  bit18/27=99/100, bit24=104, 0x0010 bit3=105 */
+					 <0x0010 0xffffffff 0x00000000>,   /* DRV  continued */
+					 <0x03c0 0xffffffff 0x00000000>,   /* MODE pins 96-103 (99/100 at bit12/16) */
+					 <0x03d0 0xffffffff 0x00000000>,   /* MODE pins 104-111 (104/105 at bit0/4) */
+					 <0x0030 0xffffffff 0x00000000>,   /* DIR  99=bit3 100=bit4 104=bit8 105=bit9 */
+					 <0x0130 0xffffffff 0x00000000>,   /* DOUT same bits */
+					 <0x0230 0xffffffff 0x00000000>;   /* DIN  same bits */
+		};
+
+		/*
+		 * The real pad config for i2c0 (99/100) and i2c6 (104/105),
+		 * both in bank 12.  One register covers both buses, so i2c0
+		 * is the control: whatever differs here is the i2c6 bug.
+		 */
+		i2c-pad-lb2 {
+			mediatek,bus = <&pio_lb2>;
+			mediatek,state = <0x0000 0xffffffff 0x00000000>,   /* DRV 99/100/104 */
+					 <0x0010 0xffffffff 0x00000000>,   /* DRV 105 */
+					 <0x0050 0xffffffff 0x00000000>,   /* IES 9/12/11/14 */
+					 <0x0080 0xffffffff 0x00000000>,   /* PD  same */
+					 <0x0090 0xffffffff 0x00000000>,   /* PU  same */
+					 <0x00c0 0xffffffff 0x00000000>;   /* SMT 6/9/8/11 */
+		};
+
+		/*
+		 * i2c0 (working) vs i2c6 (deaf) controller state, sampled twice:
+		 * at 88 ms (bootloader) and again at 15 s via the late pass
+		 * (after every i2c driver has probed).  Offsets are the
+		 * mt6893/mt6991 layout in i2c-mt65xx.c.  IO_CONFIG 0x34
+		 * selects the open-drain pad mode; DEBUGSTAT 0xe4 reflects the
+		 * SCL/SDA levels the controller itself sees.
+		 */
+		i2c0ctl-dump {
+			mediatek,bus = <&i2c0ctl>;
+			mediatek,state = <0x00 0xffffffff 0x00000000>,   /* DATA_PORT */
+					 <0x0c 0xffffffff 0x00000000>,   /* INTR_STAT */
+					 <0x10 0xffffffff 0x00000000>,   /* CONTROL */
+					 <0x20 0xffffffff 0x00000000>,   /* TIMING */
+					 <0x28 0xffffffff 0x00000000>,   /* EXT_CONF */
+					 <0x2c 0xffffffff 0x00000000>,   /* LTIMING */
+					 <0x34 0xffffffff 0x00000000>,   /* IO_CONFIG */
+					 <0x48 0xffffffff 0x00000000>,   /* CLOCK_DIV */
+					 <0xe4 0xffffffff 0x00000000>;   /* DEBUGSTAT */
+		};
+
+		i2c6ctl-dump {
+			mediatek,bus = <&i2c6ctl>;
+			mediatek,state = <0x00 0xffffffff 0x00000000>,   /* DATA_PORT */
+					 <0x0c 0xffffffff 0x00000000>,   /* INTR_STAT */
+					 <0x10 0xffffffff 0x00000000>,   /* CONTROL */
+					 <0x20 0xffffffff 0x00000000>,   /* TIMING */
+					 <0x28 0xffffffff 0x00000000>,   /* EXT_CONF */
+					 <0x2c 0xffffffff 0x00000000>,   /* LTIMING */
+					 <0x34 0xffffffff 0x00000000>,   /* IO_CONFIG */
+					 <0x48 0xffffffff 0x00000000>,   /* CLOCK_DIV */
+					 <0xe4 0xffffffff 0x00000000>;   /* DEBUGSTAT */
+		};
+
+		/*
+		 * NOTE (2026-10-14, negative result, do not redo):
+		 * reading the MT pinctrl DI register (0x200 + (N/8)*0x10) does
+		 * NOT reveal an I2C line's level once the pin is muxed to the
+		 * I2C function -- the input path is handed to the peripheral.
+		 * Measured: i2c6 (GPIO104/105) read 0x00, but so did i2c0
+		 * (GPIO99/100, mask bits 3/4) and i2c1 (GPIO200/201) on buses
+		 * that demonstrably work.  The probe sequences i2c0-lines /
+		 * i2c1-lines / i2c6-lines that used this are removed; use a
+		 * real pad-mode read or a scope instead.
+		 */
+
+		/*
+		 * Every MT6373 LDO enable byte (USID 5), from the vendor map in
+		 * include/linux/regulator/mt6373-regulator.h.  Read-only, and the
+		 * "want" is 0 so the printed value is the whole answer: bit0 is
+		 * enable, bit1 is low-power mode.  The bootloader never powers the
+		 * PMIC down across our hand-off, so this is a snapshot of what is
+		 * actually live -- use it to spot an obviously-off rail that could
+		 * be feeding the i2c6 devices.
+		 */
+		mt6373-ldo-dump {
+			mediatek,bus = <&pmif1>;
+			mediatek,usid = <0x05>;
+			mediatek,state = <0x1b87 0x000000ff 0x00000000>,   /* VAUD18 */
+					 <0x1b95 0x000000ff 0x00000000>,   /* VUSB */
+					 <0x1ba3 0x000000ff 0x00000000>,   /* VAUX18 */
+					 <0x1bb1 0x000000ff 0x00000000>,   /* VRF13_AIF */
+					 <0x1bbf 0x000000ff 0x00000000>,   /* VRF18_AIF */
+					 <0x1bcd 0x000000ff 0x00000000>,   /* VRFIO18_AIF */
+					 <0x1c07 0x000000ff 0x00000000>,   /* VCN33_1 */
+					 <0x1c15 0x000000ff 0x00000000>,   /* VCN33_2 */
+					 <0x1c23 0x000000ff 0x00000000>,   /* VCN33_3 */
+					 <0x1c31 0x000000ff 0x00000000>,   /* VCN18IO */
+					 <0x1c3f 0x000000ff 0x00000000>,   /* VRF09_AIF */
+					 <0x1c4d 0x000000ff 0x00000000>,   /* VRF12_AIF */
+					 <0x1c87 0x000000ff 0x00000000>,   /* VANT18 */
+					 <0x1ca3 0x000000ff 0x00000000>,   /* VEFUSE */
+					 <0x1cb1 0x000000ff 0x00000000>,   /* VMCH */
+					 <0x1cc0 0x000000ff 0x00000000>,   /* VMC */
+					 <0x1cce 0x000000ff 0x00000000>,   /* VIBR */
+					 <0x1d07 0x000000ff 0x00000000>,   /* VIO28 */
+					 <0x1d15 0x000000ff 0x00000000>,   /* VFP */
+					 <0x1d23 0x000000ff 0x00000000>,   /* VTP */
+					 <0x1d31 0x000000ff 0x00000000>,   /* VSIM1 */
+					 <0x1d40 0x000000ff 0x00000000>,   /* VSIM2 */
+					 <0x1d87 0x000000ff 0x00000000>;   /* VSRAM_DIGRF_AIF */
+		};
+
+		/*
+		 * MT6363 md rails (SPMI USID 4): bootloader is known to bring
+		 * these up, and md_rails_up() in init currently reports them as
+		 * "owned by the regulator driver" every boot.  Confirm that from
+		 * the kernel side before deciding whether the write path is
+		 * needed at all.  vsel = uV / 6250, so 0.75/0.70/0.80 V are
+		 * 120/112/128 = 0x78/0x70/0x80.
+		 */
+		md-rails-check {
+			mediatek,bus = <&pmif1>;
+			mediatek,usid = <0x04>;
+			mediatek,state = <0x240 0x00000070 0x00000070>,
+					 <0x250 0x000000ff 0x00000078>,
+					 <0x251 0x000000ff 0x00000070>,
+					 <0x252 0x000000ff 0x00000080>;
+		};
+
+		/*
+		 * The mainline mt6363-regulator.h puts the buck enables at
+		 * 0x210/0x213, while the vendor sequence (and therefore
+		 * init-rootfs.c md_rails_up) uses 0x240/0x241/0x250-0x252.
+		 * init's comment claims writes to the mainline map are silently
+		 * ignored.  Read both so the map question is settled by the
+		 * silicon rather than by argument; read-only, so probing an
+		 * unmapped offset costs nothing.
+		 */
+		mt6363-alt-map {
+			mediatek,bus = <&pmif1>;
+			mediatek,usid = <0x04>;
+			mediatek,state = <0x0210 0x000000ff 0x000000ff>,
+					 <0x0213 0x000000ff 0x000000ff>,
+					 <0x021c 0x000000ff 0x00000000>,
+					 <0x0220 0x000000ff 0x00000000>,
+					 <0x0221 0x000000ff 0x00000000>,
+					 <0x0222 0x000000ff 0x00000000>;
+		};
+
+		/* MT6373 bucks: VBUCK0-7 share 0x240, VBUCK8-9 share 0x243.
+		 * Boot snapshot has every buck on except VBUCK2, so also dump
+		 * the per-buck VOSEL (0x24c-0x255) to see what VBUCK2 was
+		 * configured for before it was left off. */
+		mt6373-buck-dump {
+			mediatek,bus = <&pmif1>;
+			mediatek,usid = <0x05>;
+			mediatek,state = <0x240 0x000000ff 0x00000000>,
+					 <0x243 0x000000ff 0x00000000>,
+					 <0x246 0x000000ff 0x00000000>,
+					 <0x249 0x000000ff 0x00000000>,
+					 <0x24c 0x000000ff 0x00000000>,
+					 <0x24d 0x000000ff 0x00000000>,
+					 <0x24e 0x000000ff 0x00000000>,
+					 <0x24f 0x000000ff 0x00000000>,
+					 <0x250 0x000000ff 0x00000000>,
+					 <0x251 0x000000ff 0x00000000>,
+					 <0x252 0x000000ff 0x00000000>,
+					 <0x253 0x000000ff 0x00000000>,
+					 <0x254 0x000000ff 0x00000000>,
+					 <0x255 0x000000ff 0x00000000>;
+		};
+
+
+		/*
+		 * SoC GPIO9 "codec-en": gates the MT6681 audio domain, which also
+		 * feeds the i2c6 pull-ups and the speaker amps' VDD.  MODE
+		 * 0x310 nibble 1 (pin 9 % 8), DIR 0x000 bit9, DO 0x100 bit9.
+		 */
+		codec-en {
+			mediatek,bus = <&pio_early>;
+			mediatek,state = <0x100 0x00000200 0x00000200>,
+					 <0x000 0x00000200 0x00000200>;
+			mediatek,steps = <0x310 0x000000f0 0x00000000 0>,
+					 <0x000 0x00000200 0x00000200 0>,
+					 <0x100 0x00000200 0x00000200 0>;
+		};
+
+		/*
+		 * MT6373 PIO1/2, which carry the two TFA9874 RESETN lines
+		 * (SPMI USID 5).  Registers from vendor pinctrl-mt6373.c:
+		 *   PIO1 mode 0xc4[5:3], dir 0x88 bit7, dout 0xac bit7,
+		 *        drv 0x29[7:4], smt 0x22 bit7
+		 *   PIO2 mode 0xc7[2:0], dir 0x8b bit0, dout 0xaf bit0,
+		 *        drv 0x2a[3:0], smt 0x23 bit0
+		 * drv/smt are mandatory: an MTK pin with drv=0 does not actually
+		 * drive, so a reset that only sets mode/dir/dout never reaches
+		 * the amp.  Split into a state-guarded config and an always-run
+		 * pulse, because a pulse leaves no resting state that proves it
+		 * happened.
+		 */
+		amp-pins {
+			mediatek,bus = <&pmif1>;
+			mediatek,usid = <0x05>;
+			mediatek,state = <0xc4 0x00000038 0x00000000>,
+					 <0xc7 0x00000007 0x00000000>,
+					 <0x88 0x00000080 0x00000080>,
+					 <0x8b 0x00000001 0x00000001>,
+					 <0x29 0x000000f0 0x000000f0>,
+					 <0x2a 0x0000000f 0x0000000f>,
+					 <0x22 0x00000080 0x00000080>,
+					 <0x23 0x00000001 0x00000001>;
+			mediatek,steps = <0xc4 0x00000038 0x00000000 0>,
+					 <0x88 0x00000080 0x00000080 0>,
+					 <0xc7 0x00000007 0x00000000 0>,
+					 <0x8b 0x00000001 0x00000001 0>,
+					 <0x29 0x000000f0 0x000000f0 0>,
+					 <0x2a 0x0000000f 0x0000000f 0>,
+					 <0x22 0x00000080 0x00000080 0>,
+					 <0x23 0x00000001 0x00000001 0>;
+		};
+
+		amp-reset {
+			mediatek,bus = <&pmif1>;
+			mediatek,usid = <0x05>;
+			mediatek,steps = <0xac 0x00000080 0x00000080 0>,
+					 <0xaf 0x00000001 0x00000001 10000>,
+					 <0xac 0x00000080 0x00000000 0>,
+					 <0xaf 0x00000001 0x00000000 10000>;
+		};
+
+		amp-vaud18 {
+			mediatek,bus = <&pmif1>;
+			mediatek,usid = <0x05>;
+			mediatek,state = <0x1b87 0x00000001 0x00000001>;
+			mediatek,steps = <0x1e89 0xffffffff 0x0c 0>,
+					 <0x1b87 0x00000001 0x00000001 0>;
 		};
 	};
 };
@@ -648,6 +1035,14 @@
 		reset-gpios = <&pio 3 GPIO_ACTIVE_HIGH>;
 		irq-gpios = <&pio 7 IRQ_TYPE_EDGE_FALLING>;
 
+		/*
+		 * Wired to the fixed stub, not the MT6373 VTP regulator: the
+		 * kernel SPMI path cannot complete an EXT_REG_LONG (16-bit
+		 * address) transaction to USID 5 ("failed to wait for
+		 * SWINF_WFVLDCLR"), so the MT6373 regulator never registers and
+		 * the panel would defer forever.  Pointing this back restores
+		 * touch; the rail itself is raised by mt6991-pmic-early now.
+		 */
 		avdd-supply = <&reg_vtouch>;
 
 		touchpanel,max-num-support = <10>;
