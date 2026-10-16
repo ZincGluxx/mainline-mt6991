@@ -52,7 +52,6 @@ nod /dev/kmsg 0644 0 0 c 1 11
 dir /proc 0755 0 0
 dir /sys 0755 0 0
 dir /bin 0755 0 0
-file /bin/busybox $IRFS/busybox 0755 0 0
 dir /lib 0755 0 0
 dir /lib/firmware 0755 0 0
 dir /lib/firmware/tp 0755 0 0
