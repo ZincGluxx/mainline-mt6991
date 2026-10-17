@@ -981,6 +981,19 @@ config REGULATOR_MT6363
 	help
 	  Say Y here to enable support for regulators found in the MediaTek
 	  MT6363 SPMI PMIC.
+config REGULATOR_MT6373
+	tristate "MT6373 SPMI Regulator driver"
+	depends on OF
+	depends on SPMI
+	select REGMAP_SPMI
+	help
+	  Say Y here to select this option to enable the power regulator of
+	  MediaTek MT6373 PMIC.
+
+	  Unlike the MT6363 driver this one builds its own regmap on the PMIC's
+	  SPMI device (devm_regmap_init_spmi_ext) instead of taking it from an
+	  MFD parent, so it matches a DT child directly.
+
 	  This driver supports the control of different power rails of device
 	  through regulator interface.
 
