@@ -792,9 +792,28 @@
 
 &i2c6 {
 	status = "okay";
-	clock-frequency = <100000>;
-	pinctrl-names = "default";
-	pinctrl-0 = <&pinctrl_i2c6>;
+	compatible = "mediatek,mt6991-i2c";
+	/* vendor FDT: clock-frequency = <0x61a80> = 400 kHz.  This was once
+	 * dropped to 100 kHz only because i2c0's fuel gauge needed it; the
+	 * 100 kHz fix belongs to i2c0 alone (bq27541 times out at 400 kHz),
+	 * and both 100 kHz and 400 kHz leave the speaker amps NAK. */
+	clock-frequency = <400000>;
+	/*
+	 * Deliberately NO pinctrl-names/pinctrl-0 here.
+	 *
+	 * The vendor FDT's i2c@13170000 node has no pinctrl either, and the
+	 * Android log confirms pinmux-pins shows 104/105 as MUX UNCLAIMED:
+	 * Android never claims these pads, so the bootloader's configuration
+	 * (MODE=1, IES=0, PU=0, per i2c-pad-boot at 88 ms) is what actually
+	 * serves the bus -- and that is exactly the state in which 0x75/0x34/
+	 * 0x35 ACK.
+	 *
+	 * Our own claim (pinmux + bias-pull-up + input-enable) deviates from
+	 * that known-good state.  input-enable alone was tried and did not
+	 * fix the NACK, so drop the whole claim and mirror Android instead.
+	 * pinctrl_i2c6 below stays defined for reference but is unreferenced.
+	 */
+	/* pinctrl-names = "default"; */
 
 	nxp-eusb2-repeater@4f {
 		compatible = "mtk,nxp-eusb2-repeater";
@@ -806,6 +825,47 @@
 	ps5170@28 {
 		compatible = "parade,ps5170";
 		reg = <0x28>;
+		status = "okay";
+	};
+
+	/*
+	 * Devices present in the vendor FDT that were missing here until
+	 * 2026-10-14 (found by diffing /root/mainline/fdt.dts.txt, the dump of
+	 * the device tree the phone actually runs).  No mainline driver for
+	 * either; the nodes exist so the addresses are enumerated and so the
+	 * hardware map stops being lost.
+	 *
+	 * gate-ic@11 is mtk,gate-ic-i2c (drivers/misc/mediatek/gate_ic/
+	 * rt4831a_drv.c) -- a Richtek display bias part.  Its probe needs a
+	 * "gate-power" GPIO that the vendor node does not provide, so it does
+	 * not bind on Android either.
+	 *
+	 * byb-tps6128xd@75 is a TI TPS6128x boost converter, 3350 mV / 4500 mA
+	 * -- the most concrete candidate yet for the TFA98xx PVDD supply that
+	 * §13 of doc/AUDIO_NOTES.md says is invisible to software.  The vendor
+	 * driver (vendor/oplus/kernel/charger/v1/bob_ic/oplus_tps6128xd.c)
+	 * only writes VOUTFLOOR/VOUTROOF/ILIM and never an enable bit, so the
+	 * part is switched by a hardware EN pin.
+	 *
+	 * Not added: speaker_amp@5c/@5d (richtek,rt5512).  They are in the
+	 * vendor FDT but NAK on Android too (doc/AUDIO_NOTES.md §10.3) while
+	 * the tfa98xx pair ACKs, so the board is populated with the NXP amps
+	 * and the Richtek ones are the other PCB variant.
+	 */
+	gate-ic@11 {
+		compatible = "mediatek,gate-ic-i2c";
+		reg = <0x11>;
+		id = <0x06>;
+		status = "okay";
+	};
+
+	byb-tps6128xd@75 {
+		compatible = "oplus,byb-tps6128xd";
+		reg = <0x75>;
+		oplus,ic_type = <0x01>;
+		oplus,ic_index = <0x00>;
+		oplus,vout-mv = <0xd16>;	/* 3350 mV */
+		oplus,ilim-ma = <0x1194>;	/* 4500 mA */
 		status = "okay";
 	};
 
@@ -836,6 +896,7 @@
  */
 &i2c0 {
 	status = "okay";
+	compatible = "mediatek,mt6991-i2c";
 	clock-frequency = <100000>;
 	pinctrl-names = "default";
 	pinctrl-0 = <&pinctrl_i2c0>;
@@ -859,6 +920,7 @@
  */
 &i2c1 {
 	status = "okay";
+	compatible = "mediatek,mt6991-i2c";
 	clock-frequency = <400000>;
 	pinctrl-names = "default";
 	pinctrl-0 = <&pinctrl_i2c1>;
@@ -988,6 +1050,7 @@
 			pinmux = <PINMUX_GPIO99__FUNC_SCL0>,
 				 <PINMUX_GPIO100__FUNC_SDA0>;
 			bias-pull-up;
+			input-enable;
 		};
 	};
 
@@ -1006,6 +1069,15 @@
 			pinmux = <PINMUX_GPIO104__FUNC_SCL6>,
 				 <PINMUX_GPIO105__FUNC_SDA6>;
 			bias-pull-up;
+			/* Open-drain bus: the controller must be able to read
+			 * SDA back for the ACK bit.  mt8196 routes
+			 * PIN_CONFIG_INPUT_ENABLE to PINCTRL_PIN_REG_IES
+			 * (0x0050 bit11/bit14 here, via pinctrl-paris.c:289),
+			 * and without it the input buffer stays off and every
+			 * address reports ACKERR.  The bootloader sets this and
+			 * Android never claims the pins, which is why only
+			 * mainline saw the whole bus go deaf. */
+			input-enable;
 		};
 	};
 
