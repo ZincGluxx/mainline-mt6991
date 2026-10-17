@@ -61,14 +61,21 @@
 ```sh
 # 内核工具链默认 clang/LLVM/lld(kbuild LLVM=1);TOOLCHAIN=gcc ./build.sh
 # 整体切回 gcc/binutils,LLVM=-<N> 可钉某个 clang 版本(如 LLVM=-18)。
-# 1) init 必须前台编译过(后台链会吞错误)。默认编 rootfs 切换 init:
-clang -static -O2 -Wall -Wextra -o initramfs/init initramfs/init-rootfs.c
-#    (TOOLCHAIN=gcc 时这行照改用 gcc;调试 init 换成 init.c 源文件)
+# 1) init 必须前台编译过(后台链会吞错误)。默认编 rootfs 切换 init,它已不链接
+#    glibc:用仓内 minic(initramfs/minic/,手写最小 libc)。与 build.sh [1/6] 等价:
+clang -static -O2 -Wall -Wextra -ffreestanding -fno-builtin -fno-stack-protector \
+  -fno-pie -nostdinc -nostdlib -Wl,-no-pie -Wl,--build-id=none \
+  -I initramfs/minic/include -o initramfs/init \
+  initramfs/minic/crt0.S initramfs/minic/syscalls.c initramfs/minic/string.c \
+  initramfs/minic/stdio.c initramfs/minic/alloc.c initramfs/minic/dirent.c \
+  initramfs/minic/misc.c initramfs/init-rootfs.c
+strip initramfs/init
+#    (TOOLCHAIN=gcc 时命令行照改用 gcc;调试 init 换成 init.c,它仍链接 glibc)
 # 2) 后台构建:
 nohup ./build.sh > out/build.log 2>&1 &   # 产物:out/arch/arm64/boot/Image
 ```
 
-build.sh 步骤:`[1/6]` 静态 init(INIT_SRC,默认 init-rootfs.c)→
+build.sh 步骤:`[1/6]` 静态 init(INIT_SRC,默认 init-rootfs.c→minic,init.c 走 glibc)→
 `[2/6]` gen_cpio_list + merge_config + 18 项 CONFIG 校验 → `[3/6]` 只编本板 DTB
 → `[4/6]` 5 个可加载模块(scp / ccci_fsm_scp / connscp / clk-mt6991-drv /
 gps_drv_dl_v062)→ `[5/6]` 重新 gen_cpio_list → `[6/6]` Image + **内嵌 DTB
