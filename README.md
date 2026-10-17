@@ -1,8 +1,5 @@
 # RMX6688 (realme GT7 / Dimensity 9400+ / MT6991) mainline bring-up
 
-主仓库 = linux-7.2.3 内核树本身(git 根 = 本目录)。构建、打包全部在本机(手机
-aarch64)完成,无交叉工具链。历史/约束见文末。
-
 ## 功能现状
 
 ### 已实现 / 正常工作 ✅
@@ -79,32 +76,3 @@ gps_drv_dl_v062)→ `[5/6]` 重新 gen_cpio_list → `[6/6]` Image + **内嵌 DT
 
 `README.md` 只存在于本仓库,不在工作区外层;功能现状的更新直接在此文件里做。
 
-## 打包刷机
-
-```sh
-./pack_boot.sh        # 自动取下一轮号(N=max+1);或 ./pack_boot.sh 39
-```
-
-magiskboot 流程:unpack 原厂 boot.img → 换 kernel → repack → 再 unpack 成品
-与 Image 逐字节 cmp。成品 `bt/new-boot.img.N`。
-
-## resmem 工具(只在改保留内存时用)
-
-- `./gen_resmem.py` — 从 `fdt`(原厂 FDT 提取件)重新生成
-  `.../mt6991-realme-rmx6688-resmem.dtsi`(期望零 diff;pstore 节点手写在
-  板级 dts,SKIP 表跳过)。fdt.dts 可由 `scripts/dtc/dtc -I dtb -O dts fdt` 还原,不入库。
-- `./verify_dtb.py` — 构建后核对产物 DTB(out 下)的保留内存与原厂一致。
-
-## Git 历史与纪律
-
-- 历史:import 原版 7.2.3(提交 1)→ 内核 bring-up delta(提交 2)→ 本构建设施
-  (提交 3)。今后每次改动按提交记录。
-- `initramfs/` 独立仓库:在其目录内单独 commit,不并入内核提交。
-- 约束(不得违反):
-  - 打包只用 `bt/magiskboot`;别处任何 bootimg.py 都是废件,禁用。
-  - 永不修改内核 ext4 相关源码(用户态 init 解决)。
-  - init 任何改动先前台 gcc 编译过再后台跑 build.sh。
-  - 日志采集 = 硬重启 ring capture(pstore_report + 40s panic → 重启后
-    Android 侧读 console-ramoops-0);sdc5 pstore-stash 方案已废弃,不复用。
-  - 内核 ext4/initramfs 的 CONFIG 基线见 rmx6688.fragment,build.sh 里 17 项
-    校验防回归。
