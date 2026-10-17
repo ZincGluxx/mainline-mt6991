@@ -391,7 +391,7 @@ static u32 fs_field(const u8 *data, u32 len, u32 off)
 	return *(const u32 *)(data + off);
 }
 
-static void fs_parse_req(const u8 *grp, u32 glen, u8 **data, u32 *len,
+static void fs_parse_req(const u8 *grp, u32 glen, const u8 **data, u32 *len,
 			 u32 *nout)
 {
 	u32 off = 8;
@@ -523,7 +523,7 @@ static int port_fs_reply(struct port_t *port, struct sk_buff *skb)
 	struct sk_buff *reply;
 	struct fs_tlv tlvs[CCCI_FS_MAX_RSP_TLV];
 	struct fs_file const *file;
-	u8 *rdata[CCCI_FS_MAX_REQ_TLV];
+	const u8 *rdata[CCCI_FS_MAX_REQ_TLV];
 	u32 rlen[CCCI_FS_MAX_REQ_TLV];
 	u32 words[8];
 	const u8 *grp;
