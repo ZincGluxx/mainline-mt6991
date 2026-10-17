@@ -487,21 +487,15 @@ static bool fs_vfs_bind(u32 h, const char *path, char *vp, size_t vpsz)
 static u8 fs_src_logged[128];
 
 /* one line per drive per boot: which store actually serves the modem */
-static void fs_vfs_note(const char *path, bool live, const char *vp, u32 len)
+static void fs_vfs_note(const char *path, const char *vp, u32 len)
 {
 	u8 idx = (u8)path[0];
 
 	if (idx >= ARRAY_SIZE(fs_src_logged) || fs_src_logged[idx])
 		return;
-	if (!live && !fs_vfs_map(path))
-		return;
 	fs_src_logged[idx] = 1;
-	if (live)
-		CCCI_NORMAL_LOG(0, CHAR, "FS src %c: live file %s len=%u\n",
-				path[0], vp, len);
-	else
-		CCCI_NORMAL_LOG(0, CHAR, "FS src %c: embedded blob len=%u\n",
-				path[0], len);
+	CCCI_NORMAL_LOG(0, CHAR, "FS src %c: live file %s len=%u\n",
+			path[0], vp, len);
 }
 
 static u32 fs_field(const u8 *data, u32 len, u32 off)
@@ -693,7 +687,7 @@ static int port_fs_reply(struct port_t *port, struct sk_buff *skb)
 		}
 		h = fs_handle_alloc(path);
 		if (fs_vfs_bind(h, path, vp, sizeof(vp))) {
-			fs_vfs_note(path, true, vp, fs_handle_size[h]);
+			fs_vfs_note(path, vp, fs_handle_size[h]);
 			if (path[0] == 'T')
 				CCCI_LEGACY_DBG_LOG(0, CHAR,
 					"FS open OK %s len=%u\n",
