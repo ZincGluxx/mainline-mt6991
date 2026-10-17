@@ -20,8 +20,8 @@
 # always produces an Image whose initramfs carries the current modules.
 #
 # Foreground note: step [1/6] compiles the init. When running this script in
-# the background, run that gcc line by hand first so a compile error is not
-# swallowed by the background chain.
+# the background, run that static-init compile by hand first so a compile
+# error is not swallowed by the background chain.
 set -euo pipefail
 
 K=$(cd "$(dirname "$0")" && pwd)   # repo root = linux-7.2.3 kernel tree
@@ -32,6 +32,25 @@ DTB=mediatek/mt6991-realme-rmx6688.dtb
 # Building on-device with ~5 GB free: 4 jobs keeps memory pressure survivable.
 # Override with JOBS=n ./build.sh once you know it fits.
 JOBS=${JOBS:-4}
+
+# Toolchain: clang/LLVM/lld by default (kbuild LLVM=1 -> clang, ld.lld,
+# llvm-ar/nm/objcopy/strip/...).  TOOLCHAIN=gcc selects the gcc/binutils
+# toolchain instead; LLVM=-<N> pins a versioned clang (e.g. LLVM=-18).
+case "${TOOLCHAIN:-clang}" in
+gcc)
+	unset LLVM
+	HOST_CC=gcc
+	;;
+clang|llvm|lld)
+	export LLVM=${LLVM:-1}
+	HOST_CC=clang
+	;;
+*)
+	echo "TOOLCHAIN must be clang (default) or gcc" >&2
+	exit 1
+	;;
+esac
+echo "==> toolchain: ${TOOLCHAIN:-clang}, LLVM=${LLVM:-no} (static init via $HOST_CC)"
 
 mkdir -p "$OUT"
 cd "$K"
@@ -104,7 +123,7 @@ echo "==> [1/6] static init"
 # rootfs-switch init; INIT_SRC=init.c builds the bring-up test init (the
 # display/touch register tests, then a reboot to Android).
 INIT_SRC=${INIT_SRC:-init-rootfs.c}
-gcc -static -O2 -Wall -Wextra -o "$IRFS/init" "$IRFS/$INIT_SRC"
+"$HOST_CC" -static -O2 -Wall -Wextra -o "$IRFS/init" "$IRFS/$INIT_SRC"
 strip "$IRFS/init"
 ls -la "$IRFS/init"
 
@@ -234,7 +253,7 @@ relink_if_stale() {
 # scripts/module.lds byte for byte.
 if [ ! -f "$OUT/scripts/module.lds" ]; then
 	mkdir -p "$OUT/scripts"
-	gcc -E -nostdinc \
+	"$HOST_CC" -E -nostdinc \
 		-I arch/arm64/include -I "$OUT"/arch/arm64/include/generated \
 		-I include -I "$OUT"/include \
 		-I arch/arm64/include/uapi -I "$OUT"/arch/arm64/include/generated/uapi \

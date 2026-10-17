@@ -62,9 +62,11 @@ aarch64)完成,无交叉工具链。历史/约束见文末。
 ## 一次构建
 
 ```sh
+# 内核工具链默认 clang/LLVM/lld(kbuild LLVM=1);TOOLCHAIN=gcc ./build.sh
+# 整体切回 gcc/binutils,LLVM=-<N> 可钉某个 clang 版本(如 LLVM=-18)。
 # 1) init 必须前台编译过(后台链会吞错误)。默认编 rootfs 切换 init:
-gcc -static -O2 -Wall -Wextra -o initramfs/init initramfs/init-rootfs.c
-#    调试 init(gcc 换成 init.c),或直接 INIT_SRC=init.c ./build.sh
+clang -static -O2 -Wall -Wextra -o initramfs/init initramfs/init-rootfs.c
+#    (TOOLCHAIN=gcc 时这行照改用 gcc;调试 init 换成 init.c 源文件)
 # 2) 后台构建:
 nohup ./build.sh > out/build.log 2>&1 &   # 产物:out/arch/arm64/boot/Image
 ```
