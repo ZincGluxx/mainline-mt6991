@@ -409,6 +409,42 @@
 		};
 
 		/*
+		 * MT6363 modem rails (SPMI USID 4), moved here from
+		 * init-rootfs.c's md_rails_up() on 2026-10-17.  The bootloader
+		 * normally brings them up, so the state check below matches and
+		 * nothing is written; the steps are the fallback repair sequence
+		 * for "modem powered but rails down".
+		 *   VBUCK4 0x250 = 120 -> 0.75 V (md-vsram)
+		 *   VBUCK5 0x251 = 112 -> 0.70 V (md-vdigrf)
+		 *   VBUCK6 0x252 = 128 -> 0.80 V (md-vmodem)
+		 *
+		 * Vendor offsets only: the mainline mt6363-regulator.h map
+		 * (0x210/0x220) does not exist on this silicon and writes there
+		 * are silently ignored (AUDIO_NOTES 13.3).
+		 *
+		 * When the kernel can really own these rails (fixed register map
+		 * + working PMIF extended access -> CONFIG_REGULATOR_MT6363 and
+		 * DTS vbuck4/5/6 regulator nodes), delete this child; see
+		 * doc/PMIC_PORT_HANDOFF.md 1.1.
+		 */
+		md-rails {
+			mediatek,bus = <&pmif1>;
+			mediatek,usid = <0x04>;
+			mediatek,state = <0x240 0x70 0x70>,
+					 <0x250 0xff 0x78>,
+					 <0x251 0xff 0x70>,
+					 <0x252 0xff 0x80>;
+			mediatek,steps = <0x142a 0xffffffff 0x43 0>,
+					 <0x142b 0xffffffff 0x55 0>,
+					 <0x250 0xffffffff 120 0>,
+					 <0x251 0xffffffff 112 0>,
+					 <0x252 0xffffffff 128 0>,
+					 <0x241 0xffffffff 0x70 0>,
+					 <0x142a 0xffffffff 0x00 0>,
+					 <0x142b 0xffffffff 0x00 5000>;
+		};
+
+		/*
 		 * MT6373 VTP LDO (SPMI USID 5) -- the touch panel's analogue rail.
 		 *   RG_LDO_VTP_EN  0x1d23  bit0 = enable, bit1 = low-power (clear it)
 		 *   RG_VTP_VOSEL   0x1e35  [3:0] = ldo_volt_table1 index 12 = 3.1 V
@@ -649,8 +685,18 @@
 		 * drive, so a reset that only sets mode/dir/dout never reaches
 		 * the amp.  Split into a state-guarded config and an always-run
 		 * pulse, because a pulse leaves no resting state that proves it
-		 * happened.
+		 * happened.  The amp rail (amp-vaud18) comes up first: the
+		 * vendor driver only pulses RESETN with the supplies already on.
 		 */
+		amp-vaud18 {
+			mediatek,bus = <&pmif1>;
+			mediatek,usid = <0x05>;
+			mediatek,state = <0x1b87 0x00000001 0x00000001>,
+					 <0x1e89 0x000000ff 0x0000000c>;
+			mediatek,steps = <0x1e89 0xffffffff 0x0c 0>,
+					 <0x1b87 0x00000001 0x00000001 20000>;
+		};
+
 		amp-pins {
 			mediatek,bus = <&pmif1>;
 			mediatek,usid = <0x05>;
@@ -679,14 +725,6 @@
 					 <0xaf 0x00000001 0x00000001 10000>,
 					 <0xac 0x00000080 0x00000000 0>,
 					 <0xaf 0x00000001 0x00000000 10000>;
-		};
-
-		amp-vaud18 {
-			mediatek,bus = <&pmif1>;
-			mediatek,usid = <0x05>;
-			mediatek,state = <0x1b87 0x00000001 0x00000001>;
-			mediatek,steps = <0x1e89 0xffffffff 0x0c 0>,
-					 <0x1b87 0x00000001 0x00000001 0>;
 		};
 	};
 };
