@@ -28,7 +28,7 @@
 #define PMIF_CMD_EXT_REG_LONG	3
 
 #define PMIF_DELAY_US   2
-#define PMIF_TIMEOUT_US (10 * 1000)
+#define PMIF_TIMEOUT_US (100 * 1000)
 
 #define PMIF_CHAN_OFFSET 0x5
 #define PMIF_RCS_IRQ_MASK	GENMASK(7, 0)
@@ -371,8 +371,19 @@ static int pmif_spmi_read_cmd(struct spmi_controller *ctrl, u8 opc, u8 sid,
 		return -EINVAL;
 
 	raw_spin_lock_irqsave(&pbus->lock, flags);
-	/* Wait for Software Interface FSM state to be IDLE. */
 	inf_reg = &arb->chan;
+
+	/*
+	 * Clear a stale valid flag before anything else.  The PMIF FSM can sit
+	 * in WFVLDCLR after an aborted transaction, and the IDLE poll below
+	 * would then never see IDLE.  init-rootfs.c's raw SWINF sequence writes
+	 * the VLD_CLR register as its very first step -- and it is the one thing
+	 * the kernel path never did.  Writing it once here is harmless when the
+	 * flag is already clear.
+	 */
+	pmif_writel(arb, pbus, 1, inf_reg->ch_rdy);
+
+	/* Wait for Software Interface FSM state to be IDLE. */
 	ret = readl_poll_timeout_atomic(pbus->base + arb->data->regs[inf_reg->ch_sta],
 					data, GET_SWINF(data) == SWINF_IDLE,
 					PMIF_DELAY_US, PMIF_TIMEOUT_US);
@@ -447,8 +458,11 @@ static int pmif_spmi_write_cmd(struct spmi_controller *ctrl, u8 opc, u8 sid,
 	memcpy(&wdata, buf, len);
 
 	raw_spin_lock_irqsave(&pbus->lock, flags);
-	/* Wait for Software Interface FSM state to be IDLE. */
 	inf_reg = &arb->chan;
+	/* As in pmif_spmi_read_cmd(): start from a clean valid flag. */
+	pmif_writel(arb, pbus, 1, inf_reg->ch_rdy);
+
+	/* Wait for Software Interface FSM state to be IDLE. */
 	ret = readl_poll_timeout_atomic(pbus->base + arb->data->regs[inf_reg->ch_sta],
 					data, GET_SWINF(data) == SWINF_IDLE,
 					PMIF_DELAY_US, PMIF_TIMEOUT_US);
