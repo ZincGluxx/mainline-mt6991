@@ -362,8 +362,9 @@
 
 		/*
 		 * PMIF window 0x1c01a000 (spmi1), SWINF channel 2 at ACC +0x880 --
-		 * the same bus, channel and command encoding init uses, and the same
-		 * channel the kernel SPMI driver drives later.
+		 * the same bus, channel and command encoding the init writer used
+		 * (see md-rails below), and the same channel the kernel SPMI
+		 * driver drives later.
 		 */
 		pmif1: pmif1 {
 			reg = <0x0 0x1c01a000 0x0 0x1000>;
@@ -373,7 +374,7 @@
 		/*
 		 * SoC PIO (pinctrl@1002d000).  No mediatek,swinf-offset, so the
 		 * driver reads/writes it as plain MMIO -- this is the window
-		 * init-rootfs.c uses for the GPIO9 "codec-en" pin.
+		 * init-rootfs.c used for the GPIO9 "codec-en" pin.
 		 */
 		pio_early: pio {
 			reg = <0x0 0x1002d000 0x0 0x1000>;
@@ -600,11 +601,10 @@
 		};
 
 		/*
-		 * MT6363 md rails (SPMI USID 4): bootloader is known to bring
-		 * these up, and md_rails_up() in init currently reports them as
-		 * "owned by the regulator driver" every boot.  Confirm that from
-		 * the kernel side before deciding whether the write path is
-		 * needed at all.  vsel = uV / 6250, so 0.75/0.70/0.80 V are
+		 * MT6363 md rails (SPMI USID 4): the bootloader is known to bring
+		 * these up; this read-only probe witnesses the state every boot, so
+		 * a bootloader change or a broken md-rails repair shows up in
+		 * dmesg.  vsel = uV / 6250, so 0.75/0.70/0.80 V are
 		 * 120/112/128 = 0x78/0x70/0x80.
 		 */
 		md-rails-check {
@@ -618,12 +618,11 @@
 
 		/*
 		 * The mainline mt6363-regulator.h puts the buck enables at
-		 * 0x210/0x213, while the vendor sequence (and therefore
-		 * init-rootfs.c md_rails_up) uses 0x240/0x241/0x250-0x252.
-		 * init's comment claims writes to the mainline map are silently
-		 * ignored.  Read both so the map question is settled by the
-		 * silicon rather than by argument; read-only, so probing an
-		 * unmapped offset costs nothing.
+		 * 0x210/0x213, while the vendor sequence (and the md rails above)
+		 * uses 0x240/0x241/0x250-0x252; AUDIO_NOTES 13.3 says writes to
+		 * the mainline map are silently ignored.  Read both so the map
+		 * question is settled by the silicon rather than by argument;
+		 * read-only, so probing an unmapped offset costs nothing.
 		 */
 		mt6363-alt-map {
 			mediatek,bus = <&pmif1>;
