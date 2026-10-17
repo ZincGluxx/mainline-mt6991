@@ -123,7 +123,21 @@ echo "==> [1/6] static init"
 # rootfs-switch init; INIT_SRC=init.c builds the bring-up test init (the
 # display/touch register tests, then a reboot to Android).
 INIT_SRC=${INIT_SRC:-init-rootfs.c}
-"$HOST_CC" -static -O2 -Wall -Wextra -o "$IRFS/init" "$IRFS/$INIT_SRC"
+if [ "$INIT_SRC" = init-rootfs.c ]; then
+	# init-rootfs.c is freestanding: it links against the in-tree minic
+	# (no host libc at all), so it can be built with the same toolchain
+	# as the kernel.  The bring-up init.c keeps its glibc path.
+	"$HOST_CC" -static -O2 -Wall -Wextra -ffreestanding -fno-builtin \
+		-fno-stack-protector -fno-pie -nostdinc -nostdlib \
+		-Wl,-no-pie -Wl,--build-id=none -I "$IRFS/minic/include" \
+		-o "$IRFS/init" \
+		"$IRFS/minic/crt0.S" "$IRFS/minic/syscalls.c" \
+		"$IRFS/minic/string.c" "$IRFS/minic/stdio.c" \
+		"$IRFS/minic/alloc.c" "$IRFS/minic/dirent.c" \
+		"$IRFS/minic/misc.c" "$IRFS/$INIT_SRC"
+else
+	"$HOST_CC" -static -O2 -Wall -Wextra -o "$IRFS/init" "$IRFS/$INIT_SRC"
+fi
 strip "$IRFS/init"
 ls -la "$IRFS/init"
 
