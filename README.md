@@ -61,7 +61,6 @@
 ```sh
 # 内核工具链默认 clang/LLVM/lld(kbuild LLVM=1);TOOLCHAIN=gcc ./build.sh
 # 整体切回 gcc/binutils,LLVM=-<N> 可钉某个 clang 版本(如 LLVM=-18)。
-# 1) init 必须前台编译过(后台链会吞错误)。默认编 rootfs 切换 init,它已不链接
 #    glibc:用仓内 minic(initramfs/minic/,手写最小 libc)。与 build.sh [1/6] 等价:
 clang -static -O2 -Wall -Wextra -ffreestanding -fno-builtin -fno-stack-protector \
   -fno-pie -nostdinc -nostdlib -Wl,-no-pie -Wl,--build-id=none \
@@ -71,15 +70,12 @@ clang -static -O2 -Wall -Wextra -ffreestanding -fno-builtin -fno-stack-protector
   initramfs/minic/misc.c initramfs/init-rootfs.c
 strip initramfs/init
 #    (TOOLCHAIN=gcc 时命令行照改用 gcc;调试 init 换成 init.c,它仍链接 glibc)
-# 2) 后台构建:
-nohup ./build.sh > out/build.log 2>&1 &   # 产物:out/arch/arm64/boot/Image
 ```
 
-build.sh 步骤:`[1/6]` 静态 init(INIT_SRC,默认 init-rootfs.c→minic,init.c 走 glibc)→
-`[2/6]` gen_cpio_list + merge_config + 18 项 CONFIG 校验 → `[3/6]` 只编本板 DTB
-→ `[4/6]` 5 个可加载模块(scp / ccci_fsm_scp / connscp / clk-mt6991-drv /
-gps_drv_dl_v062)→ `[5/6]` 重新 gen_cpio_list → `[6/6]` Image + **内嵌 DTB
-字节级比对**(System.map 符号定位 dd 出来与产物 dtb cmp)。
+## 注意事项
 
-`README.md` 只存在于本仓库,不在工作区外层;功能现状的更新直接在此文件里做。
-
+| 项目 | 说明 |
+|---|---|
+| 获取KVM | 擦除gz分区以获得KVM，刷回安卓也要一并刷回gz分区，获取KVM有一定风险，在mtk新v6设备上对于gz hyp，bl2_ext有gz hyp为空时的跳过路径，所以只需要擦除gz分区就可以让内核跑在el2上。但在安卓上并非擦除gz分区就可以正常启动到系统，依赖gz hyp服务的厂商内核模块会导致kernel panic反复重启，由于mtk设备历来的ctrl_boot没有修复，这可能会导致无限重启变砖。至于在安卓上如何开启kvm看动态coolapk@六道纸花，可以在主线内核与安卓上都能用kvm。|
+| initramfs | 内嵌于内核镜像，这样可以只刷boot镜像不需要单独刷initrd到别的分区，内嵌使用了zstd压缩尽可能减少内核体积 |
+| 嵌入dtb | 具体实现看倒数1-2条commit，可以在不移植uefi，u-boot等引导程序的情况下让lk直接引导主线内核且内嵌dtb自动忽略lk传递的安卓dtb，不需要动vendor_boot，dtbo存在的dtb，只需要刷入boot分区，内核使用内嵌的dtb启动 |
