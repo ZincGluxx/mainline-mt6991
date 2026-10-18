@@ -4,7 +4,10 @@
 # The repo root IS the kernel tree; all build products land under out/
 # (kbuild O=out) so the git tree stays clean.
 #
-# Runs natively on the phone itself (aarch64 host, no cross toolchain needed).
+# Runs natively on the phone itself (aarch64 host, no cross toolchain needed)
+# and unchanged on an x86_64 host: the default clang/LLVM toolchain targets
+# aarch64 via --target (no cross binutils), and the init compile below does
+# the same when the host is not aarch64.
 # Produces:
 #   out/arch/arm64/boot/Image
 #   out/arch/arm64/boot/dts/mediatek/mt6991-realme-rmx6688.dtb
@@ -39,11 +42,13 @@ JOBS=${JOBS:-4}
 case "${TOOLCHAIN:-clang}" in
 gcc)
 	unset LLVM
-	HOST_CC=gcc
+	HOST_CC=${CROSS_COMPILE:-}gcc
+	HOST_STRIP=${CROSS_COMPILE:-}strip
 	;;
 clang|llvm|lld)
 	export LLVM=${LLVM:-1}
-	HOST_CC=clang
+	HOST_CC=clang${LLVM#1}
+	HOST_STRIP=llvm-strip${LLVM#1}
 	;;
 *)
 	echo "TOOLCHAIN must be clang (default) or gcc" >&2
@@ -51,6 +56,19 @@ clang|llvm|lld)
 	;;
 esac
 echo "==> toolchain: ${TOOLCHAIN:-clang}, LLVM=${LLVM:-no} (static init via $HOST_CC)"
+
+# Step [1/6] runs $(HOST_CC) directly, outside kbuild -- which derives the
+# aarch64 triple from ARCH=arm64 on its own (scripts/Makefile.clang).  Match
+# that here so an x86_64 checkout runs unmodified: target aarch64 explicitly
+# and link with lld, which removes any need for cross binutils (the host
+# strip cannot handle foreign ELF objects, hence the LLVM strip above).
+if [ "$(uname -m)" = aarch64 ]; then
+	TARGET_CC_FLAGS=
+	TARGET_LD_FLAGS=
+else
+	TARGET_CC_FLAGS="--target=aarch64-linux-gnu"
+	TARGET_LD_FLAGS="-fuse-ld=lld"
+fi
 
 mkdir -p "$OUT"
 cd "$K"
@@ -127,7 +145,8 @@ if [ "$INIT_SRC" = init-rootfs.c ]; then
 	# init-rootfs.c is freestanding: it links against the in-tree minic
 	# (no host libc at all), so it can be built with the same toolchain
 	# as the kernel.  The bring-up init.c keeps its glibc path.
-	"$HOST_CC" -static -O2 -Wall -Wextra -ffreestanding -fno-builtin \
+	"$HOST_CC" $TARGET_CC_FLAGS $TARGET_LD_FLAGS \
+		-static -O2 -Wall -Wextra -ffreestanding -fno-builtin \
 		-fno-stack-protector -fno-pie -nostdinc -nostdlib \
 		-Wl,-no-pie -Wl,--build-id=none -I "$IRFS/minic/include" \
 		-o "$IRFS/init" \
@@ -136,9 +155,10 @@ if [ "$INIT_SRC" = init-rootfs.c ]; then
 		"$IRFS/minic/alloc.c" "$IRFS/minic/dirent.c" \
 		"$IRFS/minic/misc.c" "$IRFS/$INIT_SRC"
 else
-	"$HOST_CC" -static -O2 -Wall -Wextra -o "$IRFS/init" "$IRFS/$INIT_SRC"
+	"$HOST_CC" $TARGET_CC_FLAGS $TARGET_LD_FLAGS \
+		-static -O2 -Wall -Wextra -o "$IRFS/init" "$IRFS/$INIT_SRC"
 fi
-strip "$IRFS/init"
+"$HOST_STRIP" "$IRFS/init"
 ls -la "$IRFS/init"
 
 echo "==> [2/6] config"
@@ -267,7 +287,7 @@ relink_if_stale() {
 # scripts/module.lds byte for byte.
 if [ ! -f "$OUT/scripts/module.lds" ]; then
 	mkdir -p "$OUT/scripts"
-	"$HOST_CC" -E -nostdinc \
+	"$HOST_CC" $TARGET_CC_FLAGS -E -nostdinc \
 		-I arch/arm64/include -I "$OUT"/arch/arm64/include/generated \
 		-I include -I "$OUT"/include \
 		-I arch/arm64/include/uapi -I "$OUT"/arch/arm64/include/generated/uapi \

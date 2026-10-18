@@ -72,6 +72,10 @@ strip initramfs/init
 #    (TOOLCHAIN=gcc 时命令行照改用 gcc;调试 init 换成 init.c,它仍链接 glibc)
 ```
 
+整套构建(`./build.sh`)同样可在 x86_64 主机上直接运行:默认 clang/LLVM
+工具链(clang≥17 + lld)即可交叉编译,无需交叉 binutils。注意复制源码时
+必须带上 `initramfs/`(嵌套仓库,含固件与 init 源码),`out/` 是产物不要带。
+
 ## 注意事项
 
 | 项目 | 说明 |
