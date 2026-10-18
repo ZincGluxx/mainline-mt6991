@@ -61,23 +61,22 @@ CONFIG_SERIAL_8250_CONSOLE=y
 CONFIG_SERIAL_8250_MT6577=y
 CONFIG_SERIAL_OF_PLATFORM=y
 
-# --- USB-C gadget network console (RNDIS) ---------------------------------
-# Serial-over-USB: the phone presents a CDC-ACM or RNDIS gadget to the PC.
-# The PC sees D+ pullup but "USB descriptor request failed" -- the eUSB2
-# signal chain (mt6379 repeater via SPMI) needs initialization before the
-# host can read descriptors.
+# --- USB-C host (OTG) -----------------------------------------------------
+# The port runs as a USB host: mtu3 host-only plus the mtk-xhci child, so
+# keyboards / mice / U-disks work behind an OTG adapter.  The debug
+# serial/RNDIS gadget is retired (logs go over WiFi and the panel).  Port
+# VBUS comes from the MT6379 OTG boost, enabled by mt6379_charger.c; HID
+# and storage class drivers are already built in.
 #
-# Gadget-only mtu3 build: no host stack, and mtu3_probe() then forces
-# dr_mode=PERIPHERAL, which keeps probe off the vbus-supply and role-switch
-# paths (vusb33-supply is still mandatory and comes from the board DTS's
-# fixed regulator).
+# Host-only build: mtu3_probe() forces dr_mode=HOST, and the host path skips
+# the vbus-supply/role-switch dance (vusb33-supply stays mandatory and comes
+# from the board DTS's fixed regulator).  No gadget roles at all -- nothing
+# plugs the phone into a PC anymore.
 CONFIG_USB_SUPPORT=y
-CONFIG_USB_GADGET=y
 CONFIG_USB_MTU3=y
-CONFIG_USB_MTU3_GADGET=y
+CONFIG_USB_MTU3_HOST=y
+# CONFIG_USB_GADGET is not set
 CONFIG_PHY_MTK_XSPHY=y
-# g_serial built-in for CDC-ACM serial gadget to PC
-CONFIG_USB_G_SERIAL=y
 CONFIG_REGULATOR=y
 CONFIG_REGULATOR_FIXED_VOLTAGE=y
 
@@ -140,11 +139,9 @@ CONFIG_ARM64_EMBEDDED_DTB_SOURCE="arch/arm64/boot/dts/mediatek/mt6991-realme-rmx
 # Add earlycon=uart8250,mmio32,0x16000000 if you have a UART cable, and
 # initcall_debug if you need to find where a silent hang happens.
 #
-# Serial-over-USB parked (2026-09-05): the RNDIS round (#40) has no gadget
-# console; the only console is tty0 on the framebuffer.  If the host
-# enumerates the RNDIS device, init logs "usb: host enumerated" on the panel
-# (udc state -> "configured"); the #41 round then streams the kernel console
-# over the link itself (netconsole -> 192.168.42.100:6666, see below).
+# The USB port is a host now (OTG adapter, see the USB section above), so
+# the serial/RNDIS gadget console is retired: the only console is tty0 on
+# the framebuffer, and logs are collected over the rootfs instead.
 #
 # clk_ignore_unused is required once the MT8196 TOPCKGEN driver registers its
 # full clock table: "clk: Disabling unused clocks" would otherwise turn off

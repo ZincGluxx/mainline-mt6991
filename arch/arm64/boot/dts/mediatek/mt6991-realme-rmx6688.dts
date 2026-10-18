@@ -746,16 +746,19 @@
 };
 
 /*
- * USB-C serial gadget -- the debugging console to a PC (UART0's pads need a
- * factory cable).  dr_mode is redundant here: the gadget-only kernel build
- * forces PERIPHERAL in mtu3_probe() regardless.  maximum-speed = "high-speed"
- * mirrors the retail product, which disables SuperSpeed in software; the
+ * USB-C host (OTG) -- external devices through an OTG adapter (UART0's pads
+ * need a factory cable, and the debug USB console is retired).  dr_mode is
+ * redundant: the host-only kernel build forces HOST in mtu3_probe()
+ * regardless.  Port 5 V comes from the MT6379 OTG boost, which
+ * mt6379_charger.c turns on (CHG_TOP2 bit0) -- see the repeater node below
+ * and its mediatek,host-* tuning.  maximum-speed = "high-speed" mirrors the
+ * retail product, which disables SuperSpeed in software; the
  * "mediatek,eye-*" tuning values are the ones the vendor kernel ran the
  * device with (read from the booted vendor FDT).
  */
 &ssusb {
 	status = "okay";
-	dr_mode = "peripheral";
+	dr_mode = "host";
 	maximum-speed = "high-speed";
 	vusb33-supply = <&vusb33>;
 };
@@ -783,6 +786,14 @@
 		mediatek,eusb20-fsrx-hys-sel = <0x0>;
 		mediatek,vrt-sel = <0x1>;
 		mediatek,equalization = <0x4>;
+		mediatek,discth = <0x6>;
+		/* host-direction tuning, from the vendor FDT; applied by
+		 * eusb2_host_prop_set() when mtu3 drives the port as host */
+		mediatek,host-vrt-sel = <0x1>;
+		mediatek,host-rx-sqth = <0x0>;
+		mediatek,host-discth = <0x6>;
+		mediatek,host-pre-emphasis = <0x2>;
+		mediatek,host-equalization = <0x4>;
 	};
 };
 

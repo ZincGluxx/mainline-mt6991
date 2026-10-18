@@ -155,13 +155,17 @@ static int ssusb_rscs_init(struct ssusb_mtk *ssusb)
 		goto phy_err;
 	}
 
-	/* Vendor code calls ssusb_phy_set_mode(PHY_MODE_USB_DEVICE) from
-	 * switch_port_to_on() during the role switch.  Mainline mtu3 in
-	 * peripheral-only mode never triggers a role switch, so the PHY
-	 * never enters device mode.  Set it here after power-on, which is
-	 * functionally equivalent to the vendor's switch_port_to_on(). */
+	/* The vendor calls ssusb_phy_set_mode() from switch_port_to_on()
+	 * during the role switch; mainline mtu3 never gets that callback,
+	 * so set the mode here after power-on.  The host path needs its own
+	 * tuning: mtk_phy_set_mode() applies the u2 host props/IDDIG and
+	 * forwards the mode to the eUSB2 repeaters, which then apply their
+	 * mediatek,host-* values. */
 	for (i = 0; i < ssusb->num_phys; i++) {
-		ret = phy_set_mode(ssusb->phys[i], PHY_MODE_USB_DEVICE);
+		ret = phy_set_mode(ssusb->phys[i],
+				   IS_ENABLED(CONFIG_USB_MTU3_HOST) ?
+				   PHY_MODE_USB_HOST :
+				   PHY_MODE_USB_DEVICE);
 		if (ret) {
 			dev_err(ssusb->dev, "failed to set phy mode\n");
 			goto phy_mode_err;
@@ -348,6 +352,7 @@ out:
 	return 0;
 }
 
+#if IS_ENABLED(CONFIG_USB_MTU3_GADGET) || IS_ENABLED(CONFIG_USB_MTU3_DUAL_ROLE)
 /*
  * Force a D+ disconnect -> connect so the host re-enumerates.  Used by the
  * initramfs USB replug watcher: the eUSB2 chain cannot report VBUS, so mtu3
@@ -364,6 +369,7 @@ static ssize_t reconnect_store(struct device *dev,
 	return count;
 }
 static DEVICE_ATTR_WO(reconnect);
+#endif
 
 static int mtu3_probe(struct platform_device *pdev)
 {
@@ -471,7 +477,9 @@ static int mtu3_probe(struct platform_device *pdev)
 		goto comm_exit;
 	}
 
+#if IS_ENABLED(CONFIG_USB_MTU3_GADGET) || IS_ENABLED(CONFIG_USB_MTU3_DUAL_ROLE)
 	device_create_file(dev, &dev_attr_reconnect);
+#endif
 
 	device_enable_async_suspend(dev);
 	pm_runtime_put_autosuspend(dev);
@@ -497,7 +505,9 @@ static void mtu3_remove(struct platform_device *pdev)
 {
 	struct ssusb_mtk *ssusb = platform_get_drvdata(pdev);
 
+#if IS_ENABLED(CONFIG_USB_MTU3_GADGET) || IS_ENABLED(CONFIG_USB_MTU3_DUAL_ROLE)
 	device_remove_file(&pdev->dev, &dev_attr_reconnect);
+#endif
 	pm_runtime_get_sync(&pdev->dev);
 
 	switch (ssusb->dr_mode) {
