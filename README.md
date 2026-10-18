@@ -13,7 +13,7 @@
 | 屏幕亮度 | AE031 面板 DCS `0x51`(非 PWM),自带 `backlight` 设备;保守上限 `0x800`/默认 `0x600`(厂商正常上限 `0xe0e`/硬件 `0xffe`),GNOME 滑块可调 |
 | GPU | panthor / Immortalis-G925:probe、渲染、devfreq/DVFS(338–1612MHz);修了空闲 runtime-PM 循环崩溃 |
 | 触摸屏 | Synaptics S3910 (TCM v1, SPI6):单点/多点、量程 12799×27999→1280×2800、边缘校准;固件不自动刷写。AVDD(MT6373 VTP 3.1V)已交给内核:`mt6991-pmic-early` 在 subsys_initcall 用 DT 序列(bare SWINF)拉起,早于 SPI6/syna-tcm 首次 probe,init 不再上电、不再 unbind/rebind |
-| USB-C Gadget | CDC-ACM (g_serial),Windows 识别为 USB 串口。**反复拔插都能重新枚举**(完整移植厂商 eUSB2 repeater phy 链——MT6379 repeater 作 phy provider + xsphy 逐次传播 + mtu3 传播 D+ 上拉);重插已移进内核(`mtu3_usb_reconnect()` + `mt6379_charger` VBUS 上升沿),init 不再碰 USB 寄存器 |
+| USB-C (host/OTG) | 端口 **host-only**(MTU3 host + mtk-xhci):OTG 转接器下 U 盘/键鼠枚举正常。**MT6379 TCPC 自动 CC 角色切换**(500ms 轮询,PD 窗口须单字节读):待机 DRP toggling;外设(CC=Rd)插入自动开 OTG 5V boost,拔掉自动关并 re-arm;充电器(CC=Rp)插入自动关 boost,5V 充电不受影响。U 盘/充电器交替插拔任意顺序实测可靠(b60,5 个循环零报错)。调试用串口/RNDIS gadget 已退休,eUSB2 repeater phy 链保留 |
 | WiFi | MT6653 (connv3, PCIe HIF):扫描/认证/关联/WPA2 四次握手/联网全部正常;conninfra+connadp+connfem+gen4m+PCIe 全量内建。**日志降噪**:`.is_en_sw_emi_read=FALSE` 关掉那条永不回 MSI 的 CB-DMA debug 读(`halMbuRead` 1698→0、EMI MPU 告警 18→0),`kalIsNoMmioReadReason` 不再成立 ⇒ debug dump 自动回退 MMIO,信息不丢 |
 | Connectivity 电源栈 | connv3/conninfra、connfem(FEM)、NVRAM 加载、自动上电 |
 | 电池电量计 | TI bq27541 @ i2c0 0x55;`/sys/class/power_supply/` 暴露容量/电压/电流/温度,GNOME 显示电量。只读。**i2c0 必须 100kHz**(400kHz 会超时读不到) |
