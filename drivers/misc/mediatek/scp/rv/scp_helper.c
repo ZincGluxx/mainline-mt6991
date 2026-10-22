@@ -1043,6 +1043,10 @@ unsigned int is_scp_ready(enum scp_core_id id)
 }
 EXPORT_SYMBOL_GPL(is_scp_ready);
 
+#if SCP_RESERVED_MEM && defined(CONFIG_OF)
+static void scp_publish_dram_region_table(void);
+#endif
+
 /*
  * reset scp and create a timer waiting for scp notify
  * apps to stop their tasks if needed
@@ -1081,6 +1085,9 @@ int reset_scp(int reset)
 		writel(1, R_CORE0_SW_RSTN_CLR);  /* release reset */
 		dsb(SY); /* may take lot of time */
 		}
+#if SCP_RESERVED_MEM && IS_ENABLED(CONFIG_OF_RESERVED_MEM)
+		scp_publish_dram_region_table();
+#endif
 #if SCP_BOOT_TIME_OUT_MONITOR
 		scp_ready_timer[SCP_A_ID].tl.expires = jiffies + SCP_READY_TIMEOUT;
 		add_timer(&scp_ready_timer[SCP_A_ID].tl);
@@ -1760,6 +1767,42 @@ phys_addr_t scp_get_reserve_mem_size(enum scp_reserve_mem_id_t id)
 EXPORT_SYMBOL_GPL(scp_get_reserve_mem_size);
 
 #if SCP_RESERVED_MEM && defined(CONFIG_OF)
+/*
+ * The firmware resolves its carveout regions through a layout table at
+ * VA 0xB0000000: carveout base/total/table offset at +0x40, then
+ * NUMS_MEM_ID (offset, size) records at +0x80.  It is read while the
+ * firmware boots, so it must be published before the SCP is released.
+ */
+#define SCP_DRAM_REGION_HDR_OFS	0x40
+#define SCP_DRAM_REGION_TBL_OFS	0x80
+
+static void scp_publish_dram_region_table(void)
+{
+	void __iomem *share = (void __iomem *)scp_mem_base_virt;
+	u32 off, size, i;
+	int id;
+
+	if (!share)
+		return;
+
+	for (i = 0; i < SCP_DRAM_REGION_TBL_OFS + 4; i += 4)
+		writel(0, share + SCP_DRAM_REGION_HDR_OFS + i);
+	writel((u32)scp_mem_base_phys, share + SCP_DRAM_REGION_HDR_OFS + 0x4);
+	writel((u32)scp_mem_size, share + SCP_DRAM_REGION_HDR_OFS + 0x8);
+	writel(SCP_DRAM_REGION_TBL_OFS,
+	       share + SCP_DRAM_REGION_HDR_OFS + 0xc);
+	for (id = 0; id < NUMS_MEM_ID; id++) {
+		off = (u32)(scp_reserve_mblock[id].start_phys -
+			    scp_mem_base_phys);
+		size = (u32)scp_reserve_mblock[id].size;
+		writel(off, share + SCP_DRAM_REGION_TBL_OFS + 0x4 + id * 8);
+		writel(size, share + SCP_DRAM_REGION_TBL_OFS + 0x8 + id * 8);
+	}
+	dsb(sy);
+
+	pr_notice("[SCP] DRAM region table published (%d entries)\n", id);
+}
+
 static int scp_reserve_memory_ioremap(struct platform_device *pdev)
 {
 #define MEMORY_TBL_ELEM_NUM (3)
@@ -1916,6 +1959,7 @@ static int scp_reserve_memory_ioremap(struct platform_device *pdev)
 			id, start_virt, start_virt + len - 1, len);
 	}
 #endif  // DEBUG
+	scp_publish_dram_region_table();
 	return 0;
 }
 #endif
