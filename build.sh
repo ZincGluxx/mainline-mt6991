@@ -17,9 +17,9 @@
 # ramdisk the boot image happens to carry.
 #
 # Order matters: the external modules (scp / ccci_fsm_scp / connscp /
-# clk-mt6991-drv / gps_drv_dl_v062) are built *before* the initramfs list is
-# generated and the Image is linked, so the .ko files that go into the
-# initramfs are the ones built by this run.  A single `./build.sh` therefore
+# clk-mt6991-drv / gps_drv_dl_v062 / sensorhub_probe) are built *before* the
+# initramfs list is generated and the Image is linked, so the .ko files that
+# go into the initramfs are the ones built by this run.  A single `./build.sh`
 # always produces an Image whose initramfs carries the current modules.
 #
 # Foreground note: step [1/6] compiles the init. When running this script in
@@ -127,7 +127,7 @@ EOF
 	# Loadable modules, built by the module step below and cached at $K.
 	echo "dir /lib/modules 0755 0 0" >> "$IRFS/cpio_list"
 	for ko in scp.ko ccci_fsm_scp.ko connscp.ko clk-mt6991-drv.ko \
-			gps_drv_dl_v062.ko; do
+			gps_drv_dl_v062.ko sensorhub_probe.ko; do
 		if [ -f "$K/$ko" ]; then
 			echo "file /lib/modules/$ko $K/$ko 0644 0 0" >> "$IRFS/cpio_list"
 		else
@@ -216,7 +216,7 @@ ls -la "$OUT/arch/arm64/boot/dts/$DTB"
 echo "--- dtc warnings for our DTB (should be none) ---"
 "$OUT/scripts/dtc/dtc" -I dtb -O dts "$OUT/arch/arm64/boot/dts/$DTB" -o /dev/null
 
-echo "==> [4/6] kernel modules (scp, ccci_fsm_scp, connscp, clk-mt6991-drv, gps)"
+echo "==> [4/6] kernel modules (scp, ccci_fsm_scp, connscp, clk-mt6991-drv, gps, sensorhub_probe)"
 # The external-module builds link against the tree's Module.symvers, which a
 # kernel link produces.  On an already-built tree it is present; on a first
 # build, produce vmlinux once now (with a first-cut initramfs list) so the
@@ -307,6 +307,7 @@ for spec in \
 	"drivers/misc/mediatek/scp:scp.ko" \
 	"drivers/misc/mediatek/eccci/fsm:ccci_fsm_scp.ko" \
 	"drivers/misc/mediatek/conn_scp:connscp.ko" \
+	"drivers/misc/mediatek/sensorhub_probe:sensorhub_probe.ko" \
 	"drivers/clk/mediatek/mt6991:clk-mt6991-drv.ko"; do
 	mdir=${spec%%:*}; mko=${spec##*:}
 	relink_if_stale "$mdir" "$mko"
