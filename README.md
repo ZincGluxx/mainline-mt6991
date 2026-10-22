@@ -20,9 +20,10 @@
 | 充电 (5V 标准) | MT6379(SPMI USID 0x0e):内核驱动(SPMI 控制器 + `mt6379_charger`)把 `AICR`/`ICHG` 提到 3A 并每 3s 轮询重设(抗拔插)。实测 `Charging` ~2.6A;**厂商快充(VOOC)未做** |
 | PMIC 栈 | mt6363/mt6373/mt6368/mt6369 四颗全部 `pmic_mng_register_device ok`;connv3 PMIC(mt6373)注册成功;MT6379 eUSB2 repeater probe+power on。主线无 MTK PMIC MFD ⇒ 触摸 VTP 已由内核 `mt6991-pmic-early`(DT 序列 + bare SWINF,subsys_initcall)接管;MD vbuck4/5/6 仍走 init `md_rails_up()` 裸 SPMI(带回读 guard);MT6373 PIO1/2/VAUD18 + GPIO 复位(codec-en GPIO9)由 pmic-early 早期序列先行,init 侧保留 |
 | 按键 (电源/音量) | 电源=MT6363 PWRKEY、音量上=MT6363 HOMEKEY(`mt6363-spmi-keys` 轮询 `TOPSTATUS`,因 MT6991 SPMI 无 IRQ domain);音量下=`gpio-keys` GPIO11。实机可用 |
-| SCP (RV33 tinysys) | 以模块形式跑:`scp.ko` / `ccci_fsm_scp.ko`(AP 侧 CCISM)/ `connscp.ko` / `clk-mt6991-drv.ko`。`SCP READY` + `freq=190`(DVFS 工作)、ULPOSC cali 通过、AP↔SCP IPI/CCISM 双向通;`scp_ap_ready` sysfs + init `wait_scp_ready()` 保证 modem 在 SCP 完全就绪后再启动 |
+| SCP (RV33 tinysys) | 以模块形式跑:`scp.ko` / `ccci_fsm_scp.ko`(AP 侧 CCISM)/ `connscp.ko` / `clk-mt6991-drv.ko` / `sensorhub_probe.ko`。`SCP READY` + `freq=190`(DVFS 工作)、ULPOSC cali 通过、AP↔SCP IPI/CCISM 双向通;`scp_ap_ready` sysfs + init `wait_scp_ready()` 保证 modem 在 SCP 完全就绪后再启动 |
 | 基带 / Modem (M80) | CCCI/eccci 全量内建 + port_tty.c 给出**真 AT tty `/dev/ttyCCCI0`**;ch14 FS 由内核 `port_fs_reply()` 全量应答(§CCCI_FS_RE_HANDOFF),RPC `0x400F`/`0x4010`/`0x4014` 已内核实现;mdota(901 文件 8.6MB)以 `port_char_mdata` 编进内核。实测 `md_state 0→2→3→4 READY`(25–28 s),长时间零 EE / 零 `-1001`;ModemManager(`mtk-soc` 插件)控制面已通 |
 | 热管理 (LVTS) | 31 传感器(25 有效);LVTS 硬件热复位保护,不做软件降频 |
+| 传感器 (SCP sensorhub) | 复用 stock SCP 固件,由它驱动 **bmi2xy 加速度+陀螺 / akm09919 磁力计 / tcs3720 距离+ALS**;AP 侧 `sensorhub_probe.ko` 做 IPI/ready 握手、6 个共享内存环(数据/super/列表/调试/cmd)与按 IIO buffer 开关 FW 传感器类型(accel 1 / gyro 4 / mag 2 / prox 8 / cct 95)。用户态 5 个 IIO 设备:`bmi2xy`(s16 mg,9806 µm/s²,mount matrix 修正 ⇒ GNOME 自动旋转)、`bmi2xy_gyro`(s32 µrad/s,10 ms)、`akm09919_mag`(s32 nT ⇒ µT)、`tcs3720_ps`(FW 已阈值化,nearlevel=1)、`tcs3720_light`(lux 取自 cct 多通道 **super 环** value[10],~1 Hz ⇒ 自动亮度);cct 值布局 v[0]=色温K、v[3..6]=RGBC、v[10]=lux |
 | 桌面系统 | Ubuntu 24.04 + GNOME/mutter 稳定运行 |
 | 日志通道 | pstore/ramoops 可保存 panic 前日志;CCCI 日志分三档,`echo 1 > /sys/kernel/ccci/mdsys/debug` 可临时放开 `[ccci_rx]` 等降噪项 |
 
@@ -31,7 +32,6 @@
 | 子系统 | 状态 / 卡点 |
 |---|---|
 | 蓝牙 (MT6653) | 正在从厂商 `bt/linux_v2` 改走**主线 BlueZ(`btmtk`/`btmtkuart`, serdev+H4+STP)**:驱动绑定、`hci0` 注册、connv3 电源、MT6653 握手代码均已实现;但 BT UART 经 **UARTHUB**,AP 第一帧始终无回应(`query uart failed -110`)。引脚复用/复位/uarthub 放行序列厂商 pre_on 顺序均已试过,疑点转向 uarthub 数据面与 connv3 上电竞争 |
-| 传感器 | 缺厂商总线/地址/上电/初始化固件信息(BMI2xy/AK09918/TCS3720)。厂商架构依赖 SCP sensorhub(SCP 现在已跑起来、`scp.img` 里确含 `bmi2xy`/`akm09919`/`alsps`,该路线可重开);当前 AP 侧直驱四次探针全失败(`bmi270_i2c` chip id 0x3 / ENXIO) |
 | 数据面(上网) | ModemManager 控制面(握手/注册/APN profile/`mobile_data`)已通,modem 也已注册在 5G NR(`+C5GREG: 0,1`;`AT+CGDCONT?` 裸 `OK` = AP 从未配过 APN);但 `DATA_ACT` 被 modem 本地拒(`D2CPM_INVAL_ARG/NOT_PERM/NW_UNKNOWN`),`AT+CGACT=1,0` 报同一个 cause ⇒ 门槛在 modem 侧状态、与 MIPC payload 无关。缺 RIL 等价物给 ccmni 配地址 |
 | 系统 suspend/resume | 电源域下电会丢 bootloader 状态(MIPI TX PHY、blender 链、SMMU、唤醒源均未自包含) |
 | 快充 VOOC/SuperVOOC | 需电荷泵 `mt6379_2p`(i2c3 0x53)+专有协议+OPPO 框架;当前仅 5V 标准充电 |
