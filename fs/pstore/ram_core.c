@@ -537,6 +537,10 @@ static int persistent_ram_post_init(struct persistent_ram_zone *prz, u32 sig,
 
 	sig ^= PERSISTENT_RAM_SIG;
 
+	pr_info("%s: raw sig=%08x size=%zu start=%zu max=%zu\n",
+		prz->label, prz->buffer->sig,
+		buffer_size(prz), buffer_start(prz), prz->buffer_size);
+
 	if (prz->buffer->sig == sig) {
 		if (buffer_size(prz) == 0 && buffer_start(prz) == 0) {
 			pr_debug("found existing empty buffer\n");
@@ -545,9 +549,23 @@ static int persistent_ram_post_init(struct persistent_ram_zone *prz, u32 sig,
 
 		if (buffer_size(prz) > prz->buffer_size ||
 		    buffer_start(prz) > buffer_size(prz)) {
+			size_t size = buffer_size(prz);
+			size_t start = buffer_start(prz);
+
 			pr_info("found existing invalid buffer, size %zu, start %zu\n",
-				buffer_size(prz), buffer_start(prz));
-			zap = true;
+				size, start);
+			/*
+			 * A reset can tear the two header counters (size is
+			 * updated before start), leaving a valid prefix behind.
+			 * Clamp them instead of throwing the log away.
+			 */
+			if (size > prz->buffer_size)
+				size = prz->buffer_size;
+			if (start > size)
+				start = size;
+			atomic_set(&prz->buffer->size, size);
+			atomic_set(&prz->buffer->start, start);
+			persistent_ram_save_old(prz);
 		} else {
 			pr_debug("found existing buffer, size %zu, start %zu\n",
 				 buffer_size(prz), buffer_start(prz));
