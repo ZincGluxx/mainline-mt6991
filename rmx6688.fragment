@@ -248,6 +248,14 @@ CONFIG_DRM_PANEL_AE031_DSI_VDO=y
 # Dependencies (DRM_SCHED, DRM_GPUVM, DRM_EXEC, DRM_TTM) are already =y above.
 CONFIG_DRM_PANTHOR=y
 
+# --- udmabuf (DMA-BUF userspace allocator) ---------------------------------
+# KWin creates its software RenderDevice from /dev/udmabuf.  Without it,
+# DrmGpu registers the KMS node (card0) as a fallback render device; on this
+# split display/render setup card0 has no render node, so KWin advertises it
+# as the linux-dmabuf main device and Mesa clients fail EGL with fd -1,
+# falling back to software rendering.  Built-in: no modules on the rootfs.
+CONFIG_UDMABUF=y
+
 # Backlight (built-in so panel can set brightness at boot)
 CONFIG_BACKLIGHT_CLASS_DEVICE=y
 
