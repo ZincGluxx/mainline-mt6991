@@ -103,6 +103,10 @@ CONFIG_PHY_MTK_MT6379_EUSB2_REPEATER=y
 # Mount is read-only, so Android's next boot sees an untouched filesystem.
 CONFIG_F2FS_FS=y
 CONFIG_FS_ENCRYPTION=y
+CONFIG_SQUASHFS=y
+CONFIG_SQUASHFS_ZLIB=y
+CONFIG_SQUASHFS_XZ=y
+CONFIG_SQUASHFS_ZSTD=y
 
 # --- Built-in initramfs ---------------------------------------------------
 # Self-contained rootfs so the kernel has an init to run and stays up instead
